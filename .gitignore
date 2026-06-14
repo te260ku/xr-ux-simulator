@@ -58,6 +58,7 @@ sysinfo.txt
 # Crashlytics generated file
 crashlytics-build.properties
 
+*.meta
 .vscode/
 [Aa]ssets/XR/
 [Aa]ssets/TextMesh Pro/
