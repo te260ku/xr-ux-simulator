@@ -7,7 +7,7 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: M_WindowStencilWriter
+  m_Name: M_WindowMask
   m_Shader: {fileID: 4800000, guid: b4876bf01a0962847979c7c344e6c35f, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
