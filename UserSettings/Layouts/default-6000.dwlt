@@ -120,7 +120,7 @@ MonoBehaviour:
   m_MinSize: {x: 400, y: 112}
   m_MaxSize: {x: 32384, y: 16192}
   vertical: 0
-  controlID: 17
+  controlID: 44
   draggingID: 0
 --- !u!114 &6
 MonoBehaviour:
@@ -172,7 +172,7 @@ MonoBehaviour:
   m_MinSize: {x: 200, y: 112}
   m_MaxSize: {x: 16192, y: 16192}
   vertical: 1
-  controlID: 46
+  controlID: 45
   draggingID: 0
 --- !u!114 &8
 MonoBehaviour:
@@ -226,7 +226,7 @@ MonoBehaviour:
   m_MinSize: {x: 200, y: 56}
   m_MaxSize: {x: 16192, y: 8096}
   vertical: 0
-  controlID: 47
+  controlID: 46
   draggingID: 0
 --- !u!114 &10
 MonoBehaviour:
@@ -751,6 +751,12 @@ MonoBehaviour:
       m_LastClickedID:
         m_Data: 0
       m_ExpandedIDs:
+      - m_Data: -19688
+      - m_Data: -7588
+      - m_Data: -6290
+      - m_Data: -5386
+      - m_Data: -3142
+      - m_Data: -2236
       - m_Data: -1388
       m_RenameOverlay:
         m_UserAcceptedRename: 0
@@ -1489,7 +1495,7 @@ MonoBehaviour:
     m_OverlaysVisible: 1
     m_DynamicPanelBehavior: 0
   m_WindowGUID: cc27987af1a868c49b0894db9c0f5429
-  m_Gizmos: 0
+  m_Gizmos: 1
   m_OverrideSceneCullingMask: 6917529027641081856
   m_SceneIsLit: 1
   m_SceneLighting: 1
@@ -1499,9 +1505,9 @@ MonoBehaviour:
   m_AudioPlay: 0
   m_DebugDrawModesUseInteractiveLightBakingData: 0
   m_Position:
-    m_Target: {x: 272.5596, y: 150.69771, z: 43.532578}
+    m_Target: {x: -28.559994, y: 40.86483, z: -25.362747}
     speed: 2
-    m_Value: {x: 272.5596, y: 150.69771, z: 43.532578}
+    m_Value: {x: -28.559994, y: 40.86483, z: -25.362747}
   m_RenderMode: 0
   m_CameraMode:
     drawMode: 0
@@ -1548,13 +1554,13 @@ MonoBehaviour:
     m_gridOpacity: 0.5
     m_NearestPlaneToHandleMode: 0
   m_Rotation:
-    m_Target: {x: -0.045293868, y: 0.0035938825, z: -0.00016211283, w: -0.99897134}
+    m_Target: {x: 0.28197768, y: 0.19120435, z: -0.057454, w: 0.93841994}
     speed: 2
-    m_Value: {x: -0.045293868, y: 0.0035938823, z: -0.00016211283, w: -0.99897134}
+    m_Value: {x: -0.28197768, y: -0.19120435, z: 0.057454, w: -0.93842}
   m_Size:
-    m_Target: 110.99745
+    m_Target: 125.98295
     speed: 2
-    m_Value: 110.99745
+    m_Value: 125.98295
   m_Ortho:
     m_Target: 0
     speed: 2
@@ -1741,7 +1747,7 @@ MonoBehaviour:
     m_SkipHidden: 0
     m_SearchArea: 1
     m_Folders:
-    - Assets
+    - Assets/PlateauGenerator
     m_Globs: []
     m_ProductIds: 
     m_AnyWithAssetOrigin: 0
@@ -1751,7 +1757,7 @@ MonoBehaviour:
   m_ViewMode: 1
   m_StartGridSize: 64
   m_LastFolders:
-  - Assets
+  - Assets/PlateauGenerator
   m_LastFoldersGridSize: -1
   m_LastProjectPath: C:\Users\tetsuro\xr-ux-simulator
   m_LockTracker:
@@ -1760,15 +1766,15 @@ MonoBehaviour:
   m_FolderTreeState:
     scrollPos: {x: 0, y: 104}
     m_SelectedIDs:
-    - m_Data: 66952
+    - m_Data: 66428
     m_LastClickedID:
-      m_Data: 66952
+      m_Data: 66428
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 66952
-    - m_Data: 66954
-    - m_Data: 66956
-    - m_Data: 66958
+    - m_Data: 87964
+    - m_Data: 87966
+    - m_Data: 87968
+    - m_Data: 87970
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1802,10 +1808,10 @@ MonoBehaviour:
       m_Data: 0
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 66952
-    - m_Data: 66954
-    - m_Data: 66956
-    - m_Data: 66958
+    - m_Data: 87964
+    - m_Data: 87966
+    - m_Data: 87968
+    - m_Data: 87970
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1833,11 +1839,10 @@ MonoBehaviour:
       m_Icon: {fileID: 0}
       m_ResourceFile: 
   m_ListAreaState:
-    m_SelectedInstanceIDs:
-    - m_Data: 65262
+    m_SelectedInstanceIDs: []
     m_LastClickedEntityId:
-      m_Data: 65262
-    m_HadKeyboardFocusLastEvent: 0
+      m_Data: 0
+    m_HadKeyboardFocusLastEvent: 1
     m_ExpandedInstanceIDs: []
     m_RenameOverlay:
       m_UserAcceptedRename: 0
@@ -1865,7 +1870,7 @@ MonoBehaviour:
       m_Icon: {fileID: 0}
       m_ResourceFile: 
     m_NewAssetIndexInList: -1
-    m_ScrollPosition: {x: 0, y: 170}
+    m_ScrollPosition: {x: 0, y: 0}
     m_GridSize: 64
   m_SkipHiddenPackages: 0
   m_DirectoriesAreaWidth: 177
@@ -1892,7 +1897,7 @@ MonoBehaviour:
     serializedVersion: 2
     x: 868
     y: 623
-    width: 599
+    width: 601
     height: 363
   m_SerializedDataModeController:
     m_DataMode: 0
