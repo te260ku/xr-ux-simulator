@@ -256,7 +256,6 @@ GameObject:
   - component: {fileID: 610617444}
   - component: {fileID: 610617443}
   - component: {fileID: 610617445}
-  - component: {fileID: 610617446}
   m_Layer: 5
   m_Name: Text (TMP)
   m_TagString: Untagged
@@ -397,21 +396,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 72e8a60419b29384ba12681e479f54bf, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CustomText
---- !u!114 &610617446
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 610617440}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a6e1d633c6a85e040a3eeb66ccca5432, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: uPalette::uPalette.Runtime.Core.Synchronizer.Color.GraphicColorSynchronizer
-  _entryId:
-    _value: d88062f5-2674-43c5-9723-4daa311517b7
-  _component: {fileID: 610617443}
 --- !u!1 &1540082497
 GameObject:
   m_ObjectHideFlags: 0
