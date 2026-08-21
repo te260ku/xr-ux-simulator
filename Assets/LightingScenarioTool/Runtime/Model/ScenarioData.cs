@@ -96,6 +96,7 @@ namespace LightingScenarioTool
         public bool loop;
         public bool snapEnabled = true;
         public float pixelsPerSecond = 100f;
+        public float previewLightSize = 54f;
 
         // Stored in the project JSON so the preview background is restored on load.
         // The selected file path is intentionally stored as-is (normally an absolute path).

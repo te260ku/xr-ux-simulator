@@ -172,6 +172,62 @@ namespace LightingScenarioTool
             return field;
         }
 
+        public static Slider CreateSlider(
+            Transform parent,
+            float minValue,
+            float maxValue,
+            float value,
+            float width = 120f)
+        {
+            var root = CreateUIObject("Slider", parent);
+            var layout = root.AddComponent<LayoutElement>();
+            layout.preferredWidth = width;
+            layout.preferredHeight = 22f;
+
+            var backgroundGo = CreateUIObject("Background", root.transform);
+            var backgroundRt = (RectTransform)backgroundGo.transform;
+            backgroundRt.anchorMin = new Vector2(0f, 0.5f);
+            backgroundRt.anchorMax = new Vector2(1f, 0.5f);
+            backgroundRt.offsetMin = new Vector2(0f, -3f);
+            backgroundRt.offsetMax = new Vector2(0f, 3f);
+            var background = AddImage(backgroundGo, new Color(0.16f, 0.16f, 0.16f, 1f));
+            background.raycastTarget = false;
+
+            var fillAreaGo = CreateUIObject("Fill Area", root.transform);
+            var fillAreaRt = (RectTransform)fillAreaGo.transform;
+            Stretch(fillAreaRt);
+            fillAreaRt.offsetMin = new Vector2(5f, 0f);
+            fillAreaRt.offsetMax = new Vector2(-5f, 0f);
+
+            var fillGo = CreateUIObject("Fill", fillAreaGo.transform);
+            var fillRt = (RectTransform)fillGo.transform;
+            Stretch(fillRt);
+            var fill = AddImage(fillGo, new Color(0.58f, 0.58f, 0.58f, 1f));
+            fill.raycastTarget = false;
+
+            var handleAreaGo = CreateUIObject("Handle Slide Area", root.transform);
+            var handleAreaRt = (RectTransform)handleAreaGo.transform;
+            Stretch(handleAreaRt);
+            handleAreaRt.offsetMin = new Vector2(7f, 0f);
+            handleAreaRt.offsetMax = new Vector2(-7f, 0f);
+
+            var handleGo = CreateUIObject("Handle", handleAreaGo.transform);
+            var handleRt = (RectTransform)handleGo.transform;
+            handleRt.sizeDelta = new Vector2(14f, 18f);
+            var handle = AddImage(handleGo, new Color(0.88f, 0.88f, 0.88f, 1f));
+
+            var slider = root.AddComponent<Slider>();
+            slider.minValue = minValue;
+            slider.maxValue = maxValue;
+            slider.wholeNumbers = false;
+            slider.fillRect = fillRt;
+            slider.handleRect = handleRt;
+            slider.targetGraphic = handle;
+            slider.direction = Slider.Direction.LeftToRight;
+            slider.SetValueWithoutNotify(Mathf.Clamp(value, minValue, maxValue));
+            return slider;
+        }
+
         public static Toggle CreateToggle(Transform parent, string label, bool value)
         {
             var root = CreateUIObject("Toggle_" + label, parent);
@@ -357,4 +413,13 @@ namespace LightingScenarioTool
             }
         }
     }
+    internal sealed class ConsumePointerClick : MonoBehaviour, IPointerClickHandler
+    {
+        public void OnPointerClick(PointerEventData eventData)
+        {
+            // Intentionally consume clicks so controls embedded in the Preview area do not
+            // bubble up to PreviewPanel's empty-area click handler.
+        }
+    }
+
 }

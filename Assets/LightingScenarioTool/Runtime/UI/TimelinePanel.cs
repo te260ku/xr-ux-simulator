@@ -3,6 +3,7 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
+using TMPro;
 
 namespace LightingScenarioTool
 {
@@ -21,6 +22,7 @@ namespace LightingScenarioTool
         private RectTransform _labelsContent;
         private RectTransform _timeViewport;
         private RectTransform _timeContent;
+        private RectTransform _marqueeSelection;
         private RectTransform _playhead;
         private RectTransform _rulerPlayhead;
         private Scrollbar _horizontalScrollbar;
@@ -34,6 +36,8 @@ namespace LightingScenarioTool
         private readonly Dictionary<string, ColorKeyframeView> _keyframeViews = new Dictionary<string, ColorKeyframeView>();
         private readonly Dictionary<string, Image> _trackLabelImages = new Dictionary<string, Image>();
         private readonly Dictionary<string, Color> _trackLabelBaseColors = new Dictionary<string, Color>();
+        private readonly Dictionary<string, Image> _trackTimeImages = new Dictionary<string, Image>();
+        private readonly Dictionary<string, Color> _trackTimeBaseColors = new Dictionary<string, Color>();
 
         internal LightingScenarioApp App => _app;
 
@@ -83,6 +87,9 @@ namespace LightingScenarioTool
             _timeViewport.offsetMin = new Vector2(LabelWidth, ScrollbarHeight);
             _timeViewport.offsetMax = new Vector2(0f, -RulerHeight);
             _timeContent = CreateTopLeftContent("TimeContent", _timeViewport);
+            BuildMarqueeSelection();
+            var marqueeInput = _timeViewport.gameObject.AddComponent<TimelineMarqueeSelectInput>();
+            marqueeInput.Initialize(this);
 
             var lowerLeft = UiFactory.CreateUIObject("LowerLeft", transform);
             var lowerLeftRt = (RectTransform)lowerLeft.transform;
@@ -112,6 +119,94 @@ namespace LightingScenarioTool
             rt.anchorMin = rt.anchorMax = new Vector2(0f, 1f);
             rt.pivot = new Vector2(0f, 1f);
             return rt;
+        }
+
+        private void BuildMarqueeSelection()
+        {
+            var go = UiFactory.CreateUIObject("MarqueeSelection", _timeViewport);
+            _marqueeSelection = (RectTransform)go.transform;
+            _marqueeSelection.anchorMin = _marqueeSelection.anchorMax = Vector2.zero;
+            _marqueeSelection.pivot = Vector2.zero;
+            _marqueeSelection.anchoredPosition = Vector2.zero;
+            _marqueeSelection.sizeDelta = Vector2.zero;
+
+            var image = UiFactory.AddImage(go, new Color(0.25f, 0.55f, 1f, 0.16f));
+            image.raycastTarget = false;
+            var outline = go.AddComponent<Outline>();
+            outline.effectColor = new Color(0.45f, 0.72f, 1f, 0.95f);
+            outline.effectDistance = new Vector2(1f, 1f);
+            go.SetActive(false);
+        }
+
+        internal void BeginMarqueeSelection(Vector2 startScreen, Camera eventCamera)
+        {
+            UpdateMarqueeSelection(startScreen, startScreen, eventCamera);
+            if (_marqueeSelection != null)
+            {
+                _marqueeSelection.gameObject.SetActive(true);
+                _marqueeSelection.SetAsLastSibling();
+            }
+        }
+
+        internal void UpdateMarqueeSelection(Vector2 startScreen, Vector2 currentScreen, Camera eventCamera)
+        {
+            if (_marqueeSelection == null || _timeViewport == null) return;
+            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                    _timeViewport, startScreen, eventCamera, out var startLocal)) return;
+            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                    _timeViewport, currentScreen, eventCamera, out var currentLocal)) return;
+
+            var rect = _timeViewport.rect;
+            var pivotOffset = Vector2.Scale(rect.size, _timeViewport.pivot);
+            startLocal += pivotOffset;
+            currentLocal += pivotOffset;
+
+            startLocal.x = Mathf.Clamp(startLocal.x, 0f, rect.width);
+            startLocal.y = Mathf.Clamp(startLocal.y, 0f, rect.height);
+            currentLocal.x = Mathf.Clamp(currentLocal.x, 0f, rect.width);
+            currentLocal.y = Mathf.Clamp(currentLocal.y, 0f, rect.height);
+
+            var min = Vector2.Min(startLocal, currentLocal);
+            var max = Vector2.Max(startLocal, currentLocal);
+            _marqueeSelection.anchoredPosition = min;
+            _marqueeSelection.sizeDelta = max - min;
+        }
+
+        internal void EndMarqueeSelection(Vector2 startScreen, Vector2 endScreen, bool additive)
+        {
+            if (_marqueeSelection != null) _marqueeSelection.gameObject.SetActive(false);
+
+            var selectionRect = Rect.MinMaxRect(
+                Mathf.Min(startScreen.x, endScreen.x),
+                Mathf.Min(startScreen.y, endScreen.y),
+                Mathf.Max(startScreen.x, endScreen.x),
+                Mathf.Max(startScreen.y, endScreen.y));
+
+            var selectedIds = new List<string>();
+            foreach (var pair in _keyframeViews)
+            {
+                var view = pair.Value;
+                if (view == null || view.RectTransform == null) continue;
+                var corners = new Vector3[4];
+                view.RectTransform.GetWorldCorners(corners);
+                var canvas = view.GetComponentInParent<Canvas>();
+                var camera = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay
+                    ? canvas.worldCamera
+                    : null;
+                var a = RectTransformUtility.WorldToScreenPoint(camera, corners[0]);
+                var b = RectTransformUtility.WorldToScreenPoint(camera, corners[2]);
+                var keyRect = Rect.MinMaxRect(
+                    Mathf.Min(a.x, b.x), Mathf.Min(a.y, b.y),
+                    Mathf.Max(a.x, b.x), Mathf.Max(a.y, b.y));
+                if (selectionRect.Overlaps(keyRect, true)) selectedIds.Add(pair.Key);
+            }
+
+            _app.SetColorKeyframeSelection(selectedIds, additive);
+        }
+
+        internal void CancelMarqueeSelection()
+        {
+            if (_marqueeSelection != null) _marqueeSelection.gameObject.SetActive(false);
         }
 
         private void BuildHorizontalScrollbar()
@@ -159,6 +254,8 @@ namespace LightingScenarioTool
             _keyframeViews.Clear();
             _trackLabelImages.Clear();
             _trackLabelBaseColors.Clear();
+            _trackTimeImages.Clear();
+            _trackTimeBaseColors.Clear();
 
             var duration = Mathf.Max(0.001f, _app.Document.Data.metadata.duration);
             var pps = _app.Document.Data.editorSettings.pixelsPerSecond;
@@ -201,28 +298,47 @@ namespace LightingScenarioTool
 
             var pps = Mathf.Max(0.001f, _app.Document.Data.editorSettings.pixelsPerSecond);
             var duration = Mathf.Max(0f, _app.Document.Data.metadata.duration);
-            var lastWholeSecond = Mathf.FloorToInt(duration + 0.0001f);
-            var labelStepSeconds = Mathf.Max(1, Mathf.CeilToInt(55f / pps));
-            for (var second = 0; second <= lastWholeSecond; second++)
+            var interval = GetMajorTickInterval(pps);
+            var count = Mathf.CeilToInt(duration / interval);
+            for (var i = 0; i <= count; i++)
             {
-                var x = second * pps;
-                var tickGo = UiFactory.CreateUIObject("Tick_" + second + "s", _rulerContent);
+                var time = Mathf.Min(duration, i * interval);
+                var x = time * pps;
+                var tickGo = UiFactory.CreateUIObject("Tick_" + i, _rulerContent);
                 var tickRt = (RectTransform)tickGo.transform;
                 tickRt.anchorMin = tickRt.anchorMax = new Vector2(0f, 0f);
                 tickRt.pivot = new Vector2(0.5f, 0f);
                 tickRt.anchoredPosition = new Vector2(x, 0f);
-                tickRt.sizeDelta = new Vector2(1f, 12f);
+                tickRt.sizeDelta = new Vector2(1f, 13f);
                 UiFactory.AddImage(tickGo, new Color(0.55f, 0.55f, 0.55f, 1f)).raycastTarget = false;
 
-                if (second % labelStepSeconds != 0) continue;
-                var textGo = UiFactory.CreateUIObject("TickLabel_" + second + "s", _rulerContent);
+                var textGo = UiFactory.CreateUIObject("TickLabel_" + i, _rulerContent);
                 var textRt = (RectTransform)textGo.transform;
                 textRt.anchorMin = textRt.anchorMax = new Vector2(0f, 1f);
                 textRt.pivot = new Vector2(0.5f, 1f);
                 textRt.anchoredPosition = new Vector2(x, -2f);
-                textRt.sizeDelta = new Vector2(70f, 20f);
-                UiFactory.AddText(textGo, second + "s", 11, TextAnchor.MiddleCenter).raycastTarget = false;
+                textRt.sizeDelta = new Vector2(78f, 20f);
+                UiFactory.AddText(textGo, FormatTickTime(time, interval), 11, TextAnchor.MiddleCenter).raycastTarget = false;
+
+                if (time >= duration - 0.0001f) break;
             }
+        }
+
+        private static float GetMajorTickInterval(float pixelsPerSecond)
+        {
+            var targetSeconds = 72f / Mathf.Max(0.001f, pixelsPerSecond);
+            var candidates = new[] { 0.1f, 0.2f, 0.5f, 1f, 2f, 5f, 10f, 20f, 50f, 100f };
+            for (var i = 0; i < candidates.Length; i++)
+                if (candidates[i] >= targetSeconds) return candidates[i];
+            return candidates[candidates.Length - 1];
+        }
+
+        private static string FormatTickTime(float time, float interval)
+        {
+            if (interval < 1f) return time.ToString("0.0##") + "s";
+            return Mathf.Approximately(time, Mathf.Round(time))
+                ? Mathf.RoundToInt(time) + "s"
+                : time.ToString("0.##") + "s";
         }
 
         private void BuildTrackRow(LightingUnitData unit, int index)
@@ -250,13 +366,18 @@ namespace LightingScenarioTool
             _trackLabelBaseColors[unit.unitId] = baseColor;
             rowGo.AddComponent<TrackLabelClick>().Initialize(_app, unit.unitId);
 
-            var nameGo = UiFactory.CreateUIObject("Name", rowGo.transform);
-            var nameRt = (RectTransform)nameGo.transform;
+            var nameInput = UiFactory.CreateInput(rowGo.transform, unit.displayName, 80f);
+            nameInput.gameObject.name = "TrackNameInput";
+            var nameRt = (RectTransform)nameInput.transform;
             nameRt.anchorMin = nameRt.anchorMax = new Vector2(0f, 0.5f);
             nameRt.pivot = new Vector2(0f, 0.5f);
             nameRt.anchoredPosition = new Vector2(8f, 8f);
             nameRt.sizeDelta = new Vector2(80f, 22f);
-            UiFactory.AddText(nameGo, unit.displayName, 12, TextAnchor.MiddleLeft).raycastTarget = false;
+            var nameLayout = nameInput.GetComponent<LayoutElement>();
+            if (nameLayout != null) nameLayout.preferredHeight = 22f;
+            if (nameInput.textComponent != null) nameInput.textComponent.fontSize = 12f;
+            var capturedUnitId = unit.unitId;
+            nameInput.onEndEdit.AddListener(value => _app.SetUnitName(capturedUnitId, value));
 
             CreateMiniToggle(rowGo.transform, "L", unit.track.locked, new Vector2(92f, 8f))
                 .onValueChanged.AddListener(v => _app.SetTrackLocked(unit.unitId, v));
@@ -267,15 +388,6 @@ namespace LightingScenarioTool
             CreateMiniButton(rowGo.transform, "▼", new Vector2(196f, 8f))
                 .onClick.AddListener(() => _app.MoveTrack(unit.unitId, 1));
 
-            var laneLabelGo = UiFactory.CreateUIObject("KeyframeLabel", rowGo.transform);
-            var laneLabelRt = (RectTransform)laneLabelGo.transform;
-            laneLabelRt.anchorMin = laneLabelRt.anchorMax = new Vector2(0f, 0f);
-            laneLabelRt.pivot = new Vector2(0f, 0f);
-            laneLabelRt.anchoredPosition = new Vector2(8f, 2f);
-            laneLabelRt.sizeDelta = new Vector2(100f, 16f);
-            var laneLabel = UiFactory.AddText(laneLabelGo, "Color Keyframes", 10, TextAnchor.MiddleLeft);
-            laneLabel.color = new Color(0.68f, 0.68f, 0.68f, 1f);
-            laneLabel.raycastTarget = false;
         }
 
         private void BuildTrackTimeArea(LightingUnitData unit, int index)
@@ -286,10 +398,16 @@ namespace LightingScenarioTool
             rowRt.pivot = new Vector2(0f, 1f);
             rowRt.anchoredPosition = new Vector2(0f, -index * RowHeight);
             rowRt.sizeDelta = new Vector2(_timeContentWidth, RowHeight);
-            UiFactory.AddImage(rowGo,
-                index % 2 == 0
-                    ? new Color(0.105f, 0.105f, 0.105f, 1f)
-                    : new Color(0.12f, 0.12f, 0.12f, 1f)).raycastTarget = false;
+            var timeBaseColor = index % 2 == 0
+                ? new Color(0.105f, 0.105f, 0.105f, 1f)
+                : new Color(0.12f, 0.12f, 0.12f, 1f);
+            var timeImage = UiFactory.AddImage(rowGo,
+                unit.unitId == _app.SelectedUnitId
+                    ? new Color(0.145f, 0.145f, 0.105f, 1f)
+                    : timeBaseColor);
+            timeImage.raycastTarget = false;
+            _trackTimeImages[unit.unitId] = timeImage;
+            _trackTimeBaseColors[unit.unitId] = timeBaseColor;
 
             BuildGridLines(rowGo.transform);
 
@@ -316,15 +434,22 @@ namespace LightingScenarioTool
             {
                 var a = unit.track.colorKeyframes[i];
                 var b = unit.track.colorKeyframes[i + 1];
+                var x0 = a.time * pps;
                 var width = Mathf.Max(1f, (b.time - a.time) * pps);
-                var go = UiFactory.CreateUIObject("ColorSegment_" + i, lane);
-                var rt = (RectTransform)go.transform;
-                rt.anchorMin = rt.anchorMax = new Vector2(0f, 0.5f);
-                rt.pivot = new Vector2(0f, 0.5f);
-                rt.anchoredPosition = new Vector2(a.time * pps, 0f);
-                rt.sizeDelta = new Vector2(width, 4f);
-                UiFactory.AddImage(go,
-                    Color.Lerp(a.color.ToUnityColor(), b.color.ToUnityColor(), 0.5f)).raycastTarget = false;
+                var pieces = Mathf.Clamp(Mathf.CeilToInt(width / 10f), 1, 64);
+                for (var piece = 0; piece < pieces; piece++)
+                {
+                    var t0 = piece / (float)pieces;
+                    var t1 = (piece + 1) / (float)pieces;
+                    var go = UiFactory.CreateUIObject("ColorSegment_" + i + "_" + piece, lane);
+                    var rt = (RectTransform)go.transform;
+                    rt.anchorMin = rt.anchorMax = new Vector2(0f, 0.5f);
+                    rt.pivot = new Vector2(0f, 0.5f);
+                    rt.anchoredPosition = new Vector2(x0 + width * t0, 0f);
+                    rt.sizeDelta = new Vector2(Mathf.Max(1.5f, width * (t1 - t0) + 0.5f), 5f);
+                    var color = Color.Lerp(a.color.ToUnityColor(), b.color.ToUnityColor(), (t0 + t1) * 0.5f);
+                    UiFactory.AddImage(go, color).raycastTarget = false;
+                }
             }
         }
 
@@ -345,16 +470,19 @@ namespace LightingScenarioTool
         {
             var pps = Mathf.Max(0.001f, _app.Document.Data.editorSettings.pixelsPerSecond);
             var duration = Mathf.Max(0f, _app.Document.Data.metadata.duration);
-            var lastWholeSecond = Mathf.FloorToInt(duration + 0.0001f);
-            for (var second = 0; second <= lastWholeSecond; second++)
+            var interval = GetMajorTickInterval(pps);
+            var count = Mathf.CeilToInt(duration / interval);
+            for (var i = 0; i <= count; i++)
             {
-                var lineGo = UiFactory.CreateUIObject("Grid_" + second + "s", row);
+                var time = Mathf.Min(duration, i * interval);
+                var lineGo = UiFactory.CreateUIObject("Grid_" + i, row);
                 var lineRt = (RectTransform)lineGo.transform;
                 lineRt.anchorMin = lineRt.anchorMax = new Vector2(0f, 1f);
                 lineRt.pivot = new Vector2(0.5f, 1f);
-                lineRt.anchoredPosition = new Vector2(second * pps, 0f);
+                lineRt.anchoredPosition = new Vector2(time * pps, 0f);
                 lineRt.sizeDelta = new Vector2(1f, RowHeight);
-                UiFactory.AddImage(lineGo, new Color(0.29f, 0.29f, 0.29f, 0.75f)).raycastTarget = false;
+                UiFactory.AddImage(lineGo, new Color(0.29f, 0.29f, 0.29f, 0.62f)).raycastTarget = false;
+                if (time >= duration - 0.0001f) break;
             }
         }
 
@@ -454,6 +582,14 @@ namespace LightingScenarioTool
             rulerLineRt.pivot = new Vector2(0.5f, 0.5f);
             rulerLineRt.sizeDelta = new Vector2(2f, 0f);
             UiFactory.AddImage(rulerLine, new Color(1f, 0.3f, 0.25f, 1f)).raycastTarget = false;
+            var headGo = UiFactory.CreateUIObject("Head", rulerGo.transform);
+            var headRt = (RectTransform)headGo.transform;
+            headRt.anchorMin = headRt.anchorMax = new Vector2(0.5f, 1f);
+            headRt.pivot = new Vector2(0.5f, 0.5f);
+            headRt.anchoredPosition = new Vector2(0f, -5f);
+            headRt.sizeDelta = new Vector2(10f, 10f);
+            headRt.localRotation = Quaternion.Euler(0f, 0f, 45f);
+            UiFactory.AddImage(headGo, new Color(1f, 0.3f, 0.25f, 1f)).raycastTarget = false;
             _rulerPlayhead.SetAsLastSibling();
         }
 
@@ -491,6 +627,14 @@ namespace LightingScenarioTool
                 pair.Value.color = pair.Key == _app.SelectedUnitId
                     ? new Color(0.24f, 0.24f, 0.16f, 1f)
                     : _trackLabelBaseColors[pair.Key];
+            }
+
+            foreach (var pair in _trackTimeImages)
+            {
+                if (pair.Value == null) continue;
+                pair.Value.color = pair.Key == _app.SelectedUnitId
+                    ? new Color(0.145f, 0.145f, 0.105f, 1f)
+                    : _trackTimeBaseColors[pair.Key];
             }
         }
 
@@ -748,6 +892,46 @@ namespace LightingScenarioTool
         }
     }
 
+    internal sealed class TimelineMarqueeSelectInput : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
+    {
+        private TimelinePanel _panel;
+        private bool _dragging;
+        private Vector2 _startScreen;
+        private Camera _eventCamera;
+        private bool _additive;
+
+        public void Initialize(TimelinePanel panel) => _panel = panel;
+
+        public void OnBeginDrag(PointerEventData eventData)
+        {
+            if (_panel == null || eventData.button != PointerEventData.InputButton.Left) return;
+            _dragging = true;
+            _startScreen = eventData.position;
+            _eventCamera = eventData.pressEventCamera;
+            _additive = ShortcutInput.CtrlPressed;
+            _panel.BeginMarqueeSelection(_startScreen, _eventCamera);
+        }
+
+        public void OnDrag(PointerEventData eventData)
+        {
+            if (!_dragging || _panel == null) return;
+            _panel.UpdateMarqueeSelection(_startScreen, eventData.position, _eventCamera);
+        }
+
+        public void OnEndDrag(PointerEventData eventData)
+        {
+            if (!_dragging || _panel == null) return;
+            _dragging = false;
+            _panel.EndMarqueeSelection(_startScreen, eventData.position, _additive);
+        }
+
+        private void OnDisable()
+        {
+            _dragging = false;
+            _panel?.CancelMarqueeSelection();
+        }
+    }
+
     internal sealed class ColorKeyframeView : MonoBehaviour, IPointerClickHandler, IBeginDragHandler, IDragHandler, IEndDragHandler
     {
         private LightingScenarioApp _app;
@@ -761,6 +945,8 @@ namespace LightingScenarioTool
         private Vector2 _dragStartScreen;
         private Dictionary<string, float> _originalTimes;
         private float _primaryOriginalTime;
+
+        internal RectTransform RectTransform => _rt;
 
         public void Initialize(LightingScenarioApp app, string unitId, string keyframeId)
         {
@@ -795,18 +981,34 @@ namespace LightingScenarioTool
 
         public void RefreshSelection()
         {
-            _outline.enabled = _app.IsColorKeyframeSelected(_keyframeId);
+            if (_outline == null || _image == null) return;
+            var selected = _app.IsColorKeyframeSelected(_keyframeId);
+            if (selected)
+            {
+                _outline.enabled = true;
+                _outline.effectColor = new Color(1f, 0.82f, 0.12f, 1f);
+                _outline.effectDistance = new Vector2(2f, 2f);
+                return;
+            }
+
+            var c = _image.color;
+            var luminance = 0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b;
+            _outline.enabled = true;
+            _outline.effectColor = luminance < 0.25f
+                ? new Color(0.78f, 0.78f, 0.78f, 1f)
+                : new Color(0.05f, 0.05f, 0.05f, 1f);
+            _outline.effectDistance = new Vector2(1.2f, 1.2f);
         }
 
         public void OnPointerClick(PointerEventData eventData)
         {
             if (eventData.button == PointerEventData.InputButton.Left)
             {
-                var additive = _app.MultiSelectEnabled || ShortcutInput.CtrlPressed;
+                var additive = ShortcutInput.CtrlPressed;
                 if (eventData.clickCount >= 2)
                 {
                     // Do not toggle an already selected keyframe off on the second click
-                    // when Multi mode / Ctrl is active. Double-click is reserved for color edit.
+                    // when Ctrl multi-selection is active. Double-click is reserved for color edit.
                     if (!_app.IsColorKeyframeSelected(_keyframeId))
                         _app.SelectColorKeyframe(_unitId, _keyframeId, additive);
                     _app.OpenColorPickerForSelection(_rt);
@@ -839,7 +1041,7 @@ namespace LightingScenarioTool
 
             if (!_app.IsColorKeyframeSelected(_keyframeId))
             {
-                var additive = _app.MultiSelectEnabled || ShortcutInput.CtrlPressed;
+                var additive = ShortcutInput.CtrlPressed;
                 _app.SelectColorKeyframe(_unitId, _keyframeId, additive, false);
             }
 

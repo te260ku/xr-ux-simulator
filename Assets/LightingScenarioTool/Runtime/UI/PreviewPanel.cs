@@ -4,30 +4,77 @@ using System.IO;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
+using TMPro;
 
 namespace LightingScenarioTool
 {
     internal sealed class PreviewPanel : MonoBehaviour, IPointerClickHandler
     {
+        private const float ToolbarHeight = 34f;
+
         private LightingScenarioApp _app;
         private RectTransform _root;
+        private RectTransform _contentRoot;
         private RectTransform _lightsLayer;
         private Image _backgroundImage;
         private Texture2D _backgroundTexture;
         private Sprite _backgroundSprite;
         private string _loadedBackgroundPath;
+        private Slider _lightSizeSlider;
+        private TMP_Text _lightSizeText;
+        private bool _updatingToolbar;
         private readonly Dictionary<string, PreviewLightView> _views = new Dictionary<string, PreviewLightView>();
 
         public void Initialize(LightingScenarioApp app)
         {
             _app = app;
             _root = (RectTransform)transform;
-            BuildLayers();
+            BuildChrome();
         }
 
-        private void BuildLayers()
+        private void BuildChrome()
         {
-            var backgroundGo = UiFactory.CreateUIObject("PreviewBackgroundImage", transform);
+            var toolbar = UiFactory.CreateUIObject("PreviewToolbar", transform);
+            var toolbarRt = (RectTransform)toolbar.transform;
+            toolbarRt.anchorMin = new Vector2(0f, 1f);
+            toolbarRt.anchorMax = new Vector2(1f, 1f);
+            toolbarRt.pivot = new Vector2(0.5f, 1f);
+            toolbarRt.sizeDelta = new Vector2(0f, ToolbarHeight);
+            UiFactory.AddImage(toolbar, new Color(0.09f, 0.09f, 0.09f, 1f));
+            var toolbarLayout = toolbar.AddComponent<HorizontalLayoutGroup>();
+            toolbarLayout.padding = new RectOffset(6, 6, 2, 2);
+            toolbarLayout.spacing = 6f;
+            toolbarLayout.childControlWidth = true;
+            toolbarLayout.childControlHeight = true;
+            toolbarLayout.childForceExpandWidth = false;
+            toolbarLayout.childForceExpandHeight = true;
+
+            UiFactory.CreateButton(toolbar.transform, "Background Image...", _app.BrowsePreviewBackgroundImage, 128f);
+            UiFactory.CreateLabel(toolbar.transform, "Light Size", 58f);
+            _lightSizeSlider = UiFactory.CreateSlider(toolbar.transform, 20f, 120f, _app.PreviewLightSize, 105f);
+            var sliderLayout = _lightSizeSlider.GetComponent<LayoutElement>();
+            if (sliderLayout != null)
+            {
+                sliderLayout.minWidth = 65f;
+                sliderLayout.flexibleWidth = 1f;
+            }
+            _lightSizeText = UiFactory.CreateLabel(toolbar.transform, _app.PreviewLightSize.ToString("0"), 30f);
+            _lightSizeText.alignment = TextAlignmentOptions.Right;
+            _lightSizeSlider.onValueChanged.AddListener(value =>
+            {
+                if (_updatingToolbar) return;
+                _app.SetPreviewLightSizeFromUi(value);
+                if (_lightSizeText != null) _lightSizeText.text = value.ToString("0");
+            });
+
+            var contentGo = UiFactory.CreateUIObject("PreviewContent", transform);
+            _contentRoot = (RectTransform)contentGo.transform;
+            _contentRoot.anchorMin = Vector2.zero;
+            _contentRoot.anchorMax = Vector2.one;
+            _contentRoot.offsetMin = Vector2.zero;
+            _contentRoot.offsetMax = new Vector2(0f, -ToolbarHeight);
+
+            var backgroundGo = UiFactory.CreateUIObject("PreviewBackgroundImage", _contentRoot);
             var backgroundRt = (RectTransform)backgroundGo.transform;
             UiFactory.Stretch(backgroundRt);
             _backgroundImage = UiFactory.AddImage(backgroundGo, Color.white);
@@ -35,20 +82,20 @@ namespace LightingScenarioTool
             _backgroundImage.preserveAspect = true;
             _backgroundImage.type = Image.Type.Simple;
             _backgroundImage.enabled = false;
-            backgroundGo.transform.SetAsFirstSibling();
 
-            var lightsGo = UiFactory.CreateUIObject("LightsLayer", transform);
+            var lightsGo = UiFactory.CreateUIObject("LightsLayer", _contentRoot);
             _lightsLayer = (RectTransform)lightsGo.transform;
             UiFactory.Stretch(_lightsLayer);
         }
 
         public void Rebuild()
         {
-            if (_lightsLayer == null) BuildLayers();
+            if (_lightsLayer == null) BuildChrome();
             for (var i = _lightsLayer.childCount - 1; i >= 0; i--)
                 Destroy(_lightsLayer.GetChild(i).gameObject);
             _views.Clear();
 
+            RefreshToolbar();
             RefreshBackground();
 
             foreach (var unit in _app.Document.Data.lightingUnits)
@@ -61,6 +108,14 @@ namespace LightingScenarioTool
 
             RefreshColors();
             RefreshSelection();
+        }
+
+        private void RefreshToolbar()
+        {
+            _updatingToolbar = true;
+            if (_lightSizeSlider != null) _lightSizeSlider.SetValueWithoutNotify(_app.PreviewLightSize);
+            if (_lightSizeText != null) _lightSizeText.text = _app.PreviewLightSize.ToString("0");
+            _updatingToolbar = false;
         }
 
         public void RefreshBackground()
@@ -147,6 +202,13 @@ namespace LightingScenarioTool
                 pair.Value.RefreshColor();
         }
 
+        public void RefreshLightSizes()
+        {
+            RefreshToolbar();
+            foreach (var pair in _views)
+                pair.Value.RefreshSize();
+        }
+
         public void RefreshSelection()
         {
             foreach (var pair in _views)
@@ -155,6 +217,9 @@ namespace LightingScenarioTool
 
         public void OnPointerClick(PointerEventData eventData)
         {
+            if (_contentRoot == null || !RectTransformUtility.RectangleContainsScreenPoint(_contentRoot, eventData.position, eventData.pressEventCamera))
+                return;
+
             if (eventData.button == PointerEventData.InputButton.Left)
             {
                 _app.ClearSelection();
@@ -162,13 +227,16 @@ namespace LightingScenarioTool
             }
 
             if (eventData.button != PointerEventData.InputButton.Right) return;
-            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(_root, eventData.position, eventData.pressEventCamera, out var local)) return;
-            var halfSize = 27f;
-            var minX = _root.rect.width > 0f ? Mathf.Min(0.5f, halfSize / _root.rect.width) : 0f;
-            var minY = _root.rect.height > 0f ? Mathf.Min(0.5f, halfSize / _root.rect.height) : 0f;
-            var x = Mathf.Clamp(local.x / _root.rect.width + _root.pivot.x, minX, 1f - minX);
-            var y = Mathf.Clamp(local.y / _root.rect.height + _root.pivot.y, minY, 1f - minY);
-            _app.ShowContext(eventData.position, "Create Lighting Unit", () =>
+            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(_contentRoot, eventData.position, eventData.pressEventCamera, out var local)) return;
+            if (_contentRoot.rect.width <= 0f || _contentRoot.rect.height <= 0f) return;
+
+            var halfSize = _app.PreviewLightSize * 0.5f;
+            var minX = Mathf.Min(0.5f, halfSize / _contentRoot.rect.width);
+            var minY = Mathf.Min(0.5f, halfSize / _contentRoot.rect.height);
+            var topMargin = Mathf.Min(0.5f, (halfSize + 21f) / _contentRoot.rect.height);
+            var x = Mathf.Clamp(local.x / _contentRoot.rect.width + _contentRoot.pivot.x, minX, 1f - minX);
+            var y = Mathf.Clamp(local.y / _contentRoot.rect.height + _contentRoot.pivot.y, minY, 1f - topMargin);
+            _app.ShowContext(eventData.position, "Add Lighting Unit", () =>
             {
                 var unit = _app.Document.AddUnit(x, y);
                 if (unit != null) _app.SelectUnit(unit.unitId);
@@ -183,6 +251,7 @@ namespace LightingScenarioTool
         private RectTransform _rt;
         private Image _image;
         private Outline _outline;
+        private TMP_Text _label;
         private string _beforeDrag;
 
         public void Initialize(LightingScenarioApp app, string unitId)
@@ -190,7 +259,6 @@ namespace LightingScenarioTool
             _app = app;
             _unitId = unitId;
             _rt = (RectTransform)transform;
-            _rt.sizeDelta = new Vector2(54f, 54f);
             _image = UiFactory.AddImage(gameObject, Color.black);
             _outline = gameObject.AddComponent<Outline>();
             _outline.effectColor = new Color(1f, 0.8f, 0.1f, 1f);
@@ -199,12 +267,34 @@ namespace LightingScenarioTool
 
             var labelGo = UiFactory.CreateUIObject("Label", transform);
             var labelRt = (RectTransform)labelGo.transform;
-            UiFactory.Stretch(labelRt);
-            var unit = _app.Document.FindUnit(unitId);
-            var label = UiFactory.AddText(labelGo, unit != null ? unit.displayName : unitId, 11, TextAnchor.MiddleCenter);
-            label.color = Color.white;
-            label.raycastTarget = false;
+            labelRt.anchorMin = labelRt.anchorMax = new Vector2(0.5f, 1f);
+            labelRt.pivot = new Vector2(0.5f, 0f);
+            labelRt.anchoredPosition = new Vector2(0f, 3f);
+            _label = UiFactory.AddText(labelGo, string.Empty, 11, TextAnchor.MiddleCenter);
+            _label.color = Color.white;
+            _label.raycastTarget = false;
+            _label.overflowMode = TextOverflowModes.Ellipsis;
+
+            RefreshSize();
             RefreshPosition();
+            RefreshName();
+        }
+
+        public void RefreshSize()
+        {
+            if (_rt == null || _app == null) return;
+            var size = _app.PreviewLightSize;
+            _rt.sizeDelta = new Vector2(size, size);
+            if (_label != null)
+                ((RectTransform)_label.transform).sizeDelta = new Vector2(Mathf.Max(100f, size * 1.5f), 18f);
+            RefreshPosition();
+        }
+
+        private void RefreshName()
+        {
+            if (_label == null) return;
+            var unit = _app.Document.FindUnit(_unitId);
+            _label.text = unit != null ? unit.displayName : _unitId;
         }
 
         public void RefreshPosition()
@@ -215,6 +305,7 @@ namespace LightingScenarioTool
             _rt.anchorMin = anchor;
             _rt.anchorMax = anchor;
             _rt.anchoredPosition = Vector2.zero;
+            RefreshName();
         }
 
         public void RefreshColor()
@@ -253,11 +344,14 @@ namespace LightingScenarioTool
             var parent = (RectTransform)_rt.parent;
             if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(parent, eventData.position, eventData.pressEventCamera, out var local)) return;
             var unit = _app.Document.FindUnit(_unitId);
-            if (unit == null) return;
-            var minX = parent.rect.width > 0f ? Mathf.Min(0.5f, _rt.rect.width * 0.5f / parent.rect.width) : 0f;
-            var minY = parent.rect.height > 0f ? Mathf.Min(0.5f, _rt.rect.height * 0.5f / parent.rect.height) : 0f;
+            if (unit == null || parent.rect.width <= 0f || parent.rect.height <= 0f) return;
+            var halfWidth = _rt.rect.width * 0.5f;
+            var halfHeight = _rt.rect.height * 0.5f;
+            var minX = Mathf.Min(0.5f, halfWidth / parent.rect.width);
+            var minY = Mathf.Min(0.5f, halfHeight / parent.rect.height);
+            var topMargin = Mathf.Min(0.5f, (halfHeight + 21f) / parent.rect.height);
             unit.previewX = Mathf.Clamp(local.x / parent.rect.width + parent.pivot.x, minX, 1f - minX);
-            unit.previewY = Mathf.Clamp(local.y / parent.rect.height + parent.pivot.y, minY, 1f - minY);
+            unit.previewY = Mathf.Clamp(local.y / parent.rect.height + parent.pivot.y, minY, 1f - topMargin);
             RefreshPosition();
         }
 

@@ -14,36 +14,87 @@ namespace LightingScenarioTool
         private const float Epsilon = 0.0001f;
         private readonly Stack<string> _undo = new Stack<string>();
         private readonly Stack<string> _redo = new Stack<string>();
+        private string _savedPersistentState;
 
         public ScenarioData Data { get; private set; } = ScenarioData.CreateDefault();
+        public string CurrentProjectPath { get; private set; }
         public bool IsDirty { get; private set; }
         public bool CanUndo => _undo.Count > 0;
         public bool CanRedo => _redo.Count > 0;
         public event Action Changed;
 
+        public ScenarioDocument()
+        {
+            _savedPersistentState = CapturePersistentState();
+        }
+
         public void NewDocument()
         {
             Data = ScenarioData.CreateDefault();
+            CurrentProjectPath = null;
             _undo.Clear();
             _redo.Clear();
+            _savedPersistentState = CapturePersistentState();
             IsDirty = false;
             NotifyChanged();
         }
 
-        public void LoadDocument(ScenarioData data)
+        public void LoadDocument(ScenarioData data, string projectPath = null)
         {
             Data = data ?? ScenarioData.CreateDefault();
             Normalize(Data);
+            CurrentProjectPath = NormalizeProjectPath(projectPath);
             _undo.Clear();
             _redo.Clear();
+            _savedPersistentState = CapturePersistentState();
             IsDirty = false;
             NotifyChanged();
         }
 
-        public void MarkSaved()
+        public void MarkSaved(string projectPath)
         {
+            CurrentProjectPath = NormalizeProjectPath(projectPath);
+            _savedPersistentState = CapturePersistentState();
             IsDirty = false;
             NotifyChanged();
+        }
+
+        public void MarkDirtyWithoutNotification()
+        {
+            RecalculateDirty();
+        }
+
+        private static string NormalizeProjectPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return null;
+            try { return System.IO.Path.GetFullPath(path.Trim()); }
+            catch { return path.Trim(); }
+        }
+
+        private string CapturePersistentState()
+        {
+            if (Data == null) return string.Empty;
+            if (Data.editorSettings == null) return JsonUtility.ToJson(Data);
+
+            // Moving the playhead is intentionally not treated as a project edit.
+            var currentTime = Data.editorSettings.currentTime;
+            try
+            {
+                Data.editorSettings.currentTime = 0f;
+                return JsonUtility.ToJson(Data);
+            }
+            finally
+            {
+                Data.editorSettings.currentTime = currentTime;
+            }
+        }
+
+        private void RecalculateDirty()
+        {
+            IsDirty = !string.Equals(
+                CapturePersistentState(),
+                _savedPersistentState ?? string.Empty,
+                StringComparison.Ordinal);
         }
 
         public string CaptureState() => JsonUtility.ToJson(Data);
@@ -56,7 +107,7 @@ namespace LightingScenarioTool
             if (string.Equals(beforeState, after, StringComparison.Ordinal)) return;
             _undo.Push(beforeState);
             _redo.Clear();
-            IsDirty = true;
+            RecalculateDirty();
             NotifyChanged();
         }
 
@@ -65,6 +116,7 @@ namespace LightingScenarioTool
             if (string.IsNullOrEmpty(beforeState)) return;
             Data = JsonUtility.FromJson<ScenarioData>(beforeState) ?? ScenarioData.CreateDefault();
             Normalize(Data);
+            RecalculateDirty();
             NotifyChanged();
         }
 
@@ -83,7 +135,7 @@ namespace LightingScenarioTool
             _redo.Push(CaptureState());
             Data = JsonUtility.FromJson<ScenarioData>(_undo.Pop()) ?? ScenarioData.CreateDefault();
             Normalize(Data);
-            IsDirty = true;
+            RecalculateDirty();
             NotifyChanged();
         }
 
@@ -93,7 +145,7 @@ namespace LightingScenarioTool
             _undo.Push(CaptureState());
             Data = JsonUtility.FromJson<ScenarioData>(_redo.Pop()) ?? ScenarioData.CreateDefault();
             Normalize(Data);
-            IsDirty = true;
+            RecalculateDirty();
             NotifyChanged();
         }
 
@@ -155,6 +207,86 @@ namespace LightingScenarioTool
         public void DeleteUnit(string unitId)
         {
             Execute(data => data.lightingUnits.RemoveAll(x => x.unitId == unitId));
+        }
+
+        public LightingUnitData DuplicateUnit(LightingUnitData source, float previewX, float previewY)
+        {
+            return DuplicateUnit(source, previewX, previewY, true);
+        }
+
+        public LightingUnitData DuplicateUnit(
+            LightingUnitData source,
+            float previewX,
+            float previewY,
+            bool includeTrackData)
+        {
+            if (source == null) return null;
+
+            LightingUnitData created = null;
+            Execute(data =>
+            {
+                var id = CreateNextUnitId();
+                created = new LightingUnitData
+                {
+                    unitId = id,
+                    displayName = CreateCopyDisplayName(data, source.displayName),
+                    previewX = Mathf.Clamp01(previewX),
+                    previewY = Mathf.Clamp01(previewY),
+                    track = includeTrackData ? CloneTrack(source.track) : new TrackData
+                    {
+                        locked = false,
+                        muted = false,
+                        colorKeyframes = new List<ColorKeyframeData>()
+                    }
+                };
+                data.lightingUnits.Add(created);
+            });
+            return created;
+        }
+
+        private static TrackData CloneTrack(TrackData source)
+        {
+            var clone = new TrackData();
+            if (source == null) return clone;
+
+            clone.locked = source.locked;
+            clone.muted = source.muted;
+            clone.colorKeyframes = (source.colorKeyframes ?? new List<ColorKeyframeData>())
+                .Where(x => x != null)
+                .Select(x => new ColorKeyframeData
+                {
+                    keyframeId = Guid.NewGuid().ToString("N"),
+                    time = x.time,
+                    color = x.color
+                })
+                .OrderBy(x => x.time)
+                .ToList();
+            return clone;
+        }
+
+        private static string CreateCopyDisplayName(ScenarioData data, string sourceName)
+        {
+            var baseName = string.IsNullOrWhiteSpace(sourceName) ? "Lighting Unit" : sourceName.Trim();
+            var copyMarkerIndex = baseName.LastIndexOf(" Copy", StringComparison.Ordinal);
+            if (copyMarkerIndex >= 0)
+            {
+                var suffix = baseName.Substring(copyMarkerIndex + 5).Trim();
+                if (suffix.Length == 0 || int.TryParse(suffix, out _))
+                    baseName = baseName.Substring(0, copyMarkerIndex);
+            }
+
+            var candidate = baseName + " Copy";
+            if (data.lightingUnits.All(x => x == null || !string.Equals(x.displayName, candidate, StringComparison.Ordinal)))
+                return candidate;
+
+            var index = 2;
+            while (true)
+            {
+                candidate = $"{baseName} Copy {index}";
+                if (data.lightingUnits.All(x => x == null || !string.Equals(x.displayName, candidate, StringComparison.Ordinal)))
+                    return candidate;
+                index++;
+            }
         }
 
         public ColorKeyframeData AddColorKeyframe(string unitId, float time, out string error)
@@ -395,6 +527,10 @@ namespace LightingScenarioTool
                 25f,
                 400f);
             data.editorSettings.currentTime = Mathf.Clamp(data.editorSettings.currentTime, 0f, data.metadata.duration);
+            data.editorSettings.previewLightSize = Mathf.Clamp(
+                data.editorSettings.previewLightSize <= 0f ? 54f : data.editorSettings.previewLightSize,
+                20f,
+                120f);
 
             var fallbackIndex = 1;
             foreach (var unit in data.lightingUnits)

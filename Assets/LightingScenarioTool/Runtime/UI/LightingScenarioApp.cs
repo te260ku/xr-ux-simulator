@@ -22,9 +22,19 @@ namespace LightingScenarioTool
             public SerializableColor color;
         }
 
+        private enum ClipboardKind
+        {
+            None,
+            ColorKeyframes,
+            LightingUnit
+        }
+
         private readonly JsonScenarioRepository _repository = new JsonScenarioRepository();
         private readonly IScenarioExporter _exporter = new DummyBinaryScenarioExporter();
         private readonly List<KeyframeClipboardItem> _clipboard = new List<KeyframeClipboardItem>();
+        private ClipboardKind _clipboardKind;
+        private string _lightingUnitClipboardJson;
+        private int _lightingUnitPasteCount;
 
         private Canvas _canvas;
         private RectTransform _overlay;
@@ -34,23 +44,16 @@ namespace LightingScenarioTool
 
         private TMP_InputField _scenarioNameInput;
         private TMP_InputField _durationInput;
-        private TMP_InputField _pathInput;
-        private TMP_Text _scenarioIdText;
+        private TMP_Text _projectStateText;
         private TMP_Text _timeText;
         private TMP_Text _statusText;
         private Toggle _loopToggle;
         private Toggle _snapToggle;
-        private Toggle _multiSelectToggle;
-        private Button _undoButton;
-        private Button _redoButton;
 
-        private TMP_InputField _unitNameInput;
+        private GameObject _selectionInspectorContent;
         private TMP_InputField _keyframeTimeInput;
-        private TMP_InputField _colorR;
-        private TMP_InputField _colorG;
-        private TMP_InputField _colorB;
-        private Button _colorPickerButton;
-        private Image _colorPreview;
+        private Button _colorSwatchButton;
+        private Image _colorSwatchImage;
 
         private bool _isPlaying;
         private bool _buildingUi;
@@ -60,7 +63,7 @@ namespace LightingScenarioTool
         public string SelectedUnitId { get; private set; }
         public HashSet<string> SelectedColorKeyframeIds { get; } = new HashSet<string>();
         public float CurrentTime => Document.Data.editorSettings.currentTime;
-        public bool MultiSelectEnabled => _multiSelectToggle != null && _multiSelectToggle.isOn;
+        public float PreviewLightSize => Mathf.Clamp(Document.Data.editorSettings.previewLightSize <= 0f ? 54f : Document.Data.editorSettings.previewLightSize, 20f, 120f);
 
         private void Awake()
         {
@@ -113,60 +116,57 @@ namespace LightingScenarioTool
             UiFactory.Stretch((RectTransform)background.transform);
             UiFactory.AddImage(background, new Color(0.055f, 0.055f, 0.055f, 1f));
 
-            var settings = UiFactory.CreateUIObject("SettingsArea", background.transform);
-            var settingsRt = (RectTransform)settings.transform;
-            settingsRt.anchorMin = new Vector2(0f, 1f);
-            settingsRt.anchorMax = new Vector2(1f, 1f);
-            settingsRt.pivot = new Vector2(0.5f, 1f);
-            settingsRt.sizeDelta = new Vector2(0f, 138f);
-            UiFactory.AddImage(settings, new Color(0.095f, 0.095f, 0.095f, 1f));
-            var layout = settings.AddComponent<VerticalLayoutGroup>();
-            layout.padding = new RectOffset(8, 8, 6, 6);
-            layout.spacing = 4f;
-            layout.childControlHeight = true;
-            layout.childForceExpandHeight = false;
-            layout.childControlWidth = true;
-            layout.childForceExpandWidth = true;
+            const float menuHeight = 30f;
+            const float projectHeight = 38f;
+            const float toolbarHeight = 38f;
+            const float inspectorHeight = 40f;
+            const float gap = 1f;
+            var y = 0f;
 
-            BuildScenarioRow(settings.transform);
-            BuildPlaybackRow(settings.transform);
-            BuildInspectorRow(settings.transform);
+            var menuBar = CreateTopBar("MenuBar", background.transform, y, menuHeight, new Color(0.075f, 0.075f, 0.075f, 1f));
+            BuildMenuBar(menuBar.transform);
+            y += menuHeight + gap;
 
-            var body = UiFactory.CreateUIObject("Body", background.transform);
-            var bodyRt = (RectTransform)body.transform;
-            bodyRt.anchorMin = Vector2.zero;
-            bodyRt.anchorMax = Vector2.one;
-            bodyRt.offsetMin = new Vector2(8f, 8f);
-            bodyRt.offsetMax = new Vector2(-8f, -146f);
-            var bodyLayout = body.AddComponent<HorizontalLayoutGroup>();
-            bodyLayout.spacing = 8f;
-            bodyLayout.childControlWidth = true;
-            bodyLayout.childControlHeight = true;
-            bodyLayout.childForceExpandHeight = true;
+            var projectBar = CreateTopBar("ProjectScenarioBar", background.transform, y, projectHeight, new Color(0.095f, 0.095f, 0.095f, 1f));
+            BuildProjectScenarioBar(projectBar.transform);
+            y += projectHeight + gap;
 
-            var timelineGo = UiFactory.CreateUIObject("TimelineArea", body.transform);
+            var toolbar = CreateTopBar("TimelineToolbar", background.transform, y, toolbarHeight, new Color(0.085f, 0.085f, 0.085f, 1f));
+            BuildTimelineToolbar(toolbar.transform);
+            y += toolbarHeight + gap;
+
+            var inspector = CreateTopBar("SelectionInspector", background.transform, y, inspectorHeight, new Color(0.10f, 0.10f, 0.10f, 1f));
+            BuildSelectionInspector(inspector.transform);
+            y += inspectorHeight + gap;
+
+            var workspace = UiFactory.CreateUIObject("Workspace", background.transform);
+            var workspaceRt = (RectTransform)workspace.transform;
+            workspaceRt.anchorMin = Vector2.zero;
+            workspaceRt.anchorMax = Vector2.one;
+            workspaceRt.offsetMin = new Vector2(8f, 8f);
+            workspaceRt.offsetMax = new Vector2(-8f, -y - 6f);
+            var workspaceLayout = workspace.AddComponent<HorizontalLayoutGroup>();
+            workspaceLayout.spacing = 8f;
+            workspaceLayout.childControlWidth = true;
+            workspaceLayout.childControlHeight = true;
+            workspaceLayout.childForceExpandWidth = true;
+            workspaceLayout.childForceExpandHeight = true;
+
+            var timelineGo = UiFactory.CreateUIObject("TimelineArea", workspace.transform);
             UiFactory.AddImage(timelineGo, new Color(0.08f, 0.08f, 0.08f, 1f));
-            timelineGo.AddComponent<LayoutElement>().flexibleWidth = 1.85f;
+            var timelineLayout = timelineGo.AddComponent<LayoutElement>();
+            timelineLayout.minWidth = 420f;
+            timelineLayout.flexibleWidth = 2f;
             _timeline = timelineGo.AddComponent<TimelinePanel>();
             _timeline.Initialize(this);
 
-            var previewGo = UiFactory.CreateUIObject("PreviewArea", body.transform);
+            var previewGo = UiFactory.CreateUIObject("PreviewArea", workspace.transform);
             UiFactory.AddImage(previewGo, new Color(0.035f, 0.035f, 0.035f, 1f));
-            previewGo.AddComponent<LayoutElement>().flexibleWidth = 1f;
+            var previewLayout = previewGo.AddComponent<LayoutElement>();
+            previewLayout.minWidth = 320f;
+            previewLayout.flexibleWidth = 1f;
             _preview = previewGo.AddComponent<PreviewPanel>();
             _preview.Initialize(this);
-
-            var titleGo = UiFactory.CreateUIObject("PreviewTitle", previewGo.transform);
-            var titleRt = (RectTransform)titleGo.transform;
-            titleRt.anchorMin = new Vector2(0f, 1f);
-            titleRt.anchorMax = new Vector2(1f, 1f);
-            titleRt.pivot = new Vector2(0.5f, 1f);
-            titleRt.sizeDelta = new Vector2(0f, 28f);
-            UiFactory.AddText(
-                titleGo,
-                "Preview  (right-click empty area to add a light)",
-                12,
-                TextAnchor.MiddleCenter).raycastTarget = false;
 
             var overlayGo = UiFactory.CreateUIObject("Overlay", transform);
             _overlay = (RectTransform)overlayGo.transform;
@@ -175,101 +175,198 @@ namespace LightingScenarioTool
             _buildingUi = false;
         }
 
-        private void BuildScenarioRow(Transform parent)
+        private static GameObject CreateTopBar(string name, Transform parent, float yFromTop, float height, Color color)
         {
-            var row = UiFactory.CreateRow(parent);
-            UiFactory.CreateLabel(row, "Scenario", 52f);
-            _scenarioNameInput = UiFactory.CreateInput(row, "New Scenario", 135f);
-            _scenarioNameInput.onEndEdit.AddListener(SetScenarioName);
-
-            UiFactory.CreateLabel(row, "Length(s)", 58f);
-            _durationInput = UiFactory.CreateInput(row, "10", 55f);
-            _durationInput.onEndEdit.AddListener(SetScenarioDuration);
-
-            _scenarioIdText = UiFactory.CreateLabel(row, "ID", 120f);
-            UiFactory.CreateLabel(row, "Path", 34f);
-            _pathInput = UiFactory.CreateInput(row, "scenario.json", 135f);
-            UiFactory.CreateButton(row, "Browse", BrowseProjectFile, 58f);
-            UiFactory.CreateButton(row, "BG Image", BrowsePreviewBackgroundImage, 72f);
-            UiFactory.CreateButton(row, "New", RequestNew, 52f);
-            UiFactory.CreateButton(row, "Save", Save, 52f);
-            UiFactory.CreateButton(row, "Load", Load, 52f);
-            UiFactory.CreateButton(row, "Export", Export, 60f);
-            UiFactory.CreateButton(row, "Exit", RequestExit, 48f);
-
-            _statusText = UiFactory.CreateLabel(row, string.Empty, 90f);
-            var statusLayout = _statusText.GetComponent<LayoutElement>();
-            if (statusLayout != null) statusLayout.flexibleWidth = 1f;
+            var bar = UiFactory.CreateUIObject(name, parent);
+            var rt = (RectTransform)bar.transform;
+            rt.anchorMin = new Vector2(0f, 1f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(0.5f, 1f);
+            rt.anchoredPosition = new Vector2(0f, -yFromTop);
+            rt.sizeDelta = new Vector2(0f, height);
+            UiFactory.AddImage(bar, color).raycastTarget = false;
+            return bar;
         }
 
-        private void BuildPlaybackRow(Transform parent)
+        private void BuildMenuBar(Transform parent)
         {
-            var row = UiFactory.CreateRow(parent);
+            var row = UiFactory.CreateRow(parent, 30f);
+            UiFactory.Stretch(row);
+            var layout = row.GetComponent<HorizontalLayoutGroup>();
+            layout.padding = new RectOffset(6, 6, 1, 1);
+            layout.spacing = 2f;
+
+            Button fileButton = null;
+            fileButton = UiFactory.CreateButton(row, "File", () => OpenFileMenu((RectTransform)fileButton.transform), 54f);
+            Button viewButton = null;
+            viewButton = UiFactory.CreateButton(row, "View", () => OpenViewMenu((RectTransform)viewButton.transform), 54f);
+            Button helpButton = null;
+            helpButton = UiFactory.CreateButton(row, "Help", () => OpenHelpMenu((RectTransform)helpButton.transform), 54f);
+
+            var spacer = UiFactory.CreateUIObject("MenuSpacer", row);
+            var spacerLayout = spacer.AddComponent<LayoutElement>();
+            spacerLayout.flexibleWidth = 1f;
+            spacerLayout.minWidth = 8f;
+
+            _statusText = UiFactory.CreateLabel(row, string.Empty, 320f);
+            var statusLayout = _statusText.GetComponent<LayoutElement>();
+            statusLayout.minWidth = 80f;
+            statusLayout.flexibleWidth = 1f;
+            _statusText.alignment = TextAlignmentOptions.Right;
+            _statusText.overflowMode = TextOverflowModes.Ellipsis;
+
+            UiFactory.CreateButton(row, "Exit", RequestExit, 58f);
+        }
+
+        private void BuildProjectScenarioBar(Transform parent)
+        {
+            var row = UiFactory.CreateRow(parent, 38f);
+            UiFactory.Stretch(row);
+            var layout = row.GetComponent<HorizontalLayoutGroup>();
+            layout.padding = new RectOffset(8, 8, 3, 3);
+            layout.spacing = 6f;
+
+            UiFactory.CreateLabel(row, "Scenario", 62f);
+            _scenarioNameInput = UiFactory.CreateInput(row, "New Scenario", 190f);
+            _scenarioNameInput.onEndEdit.AddListener(SetScenarioName);
+
+            UiFactory.CreateLabel(row, "Duration", 62f);
+            _durationInput = UiFactory.CreateInput(row, "10.000", 78f);
+            _durationInput.contentType = TMP_InputField.ContentType.DecimalNumber;
+            _durationInput.onEndEdit.AddListener(SetScenarioDuration);
+            UiFactory.CreateLabel(row, "s", 16f);
+
+            UiFactory.CreateLabel(row, "Project", 52f);
+            _projectStateText = UiFactory.CreateLabel(row, "Untitled", 220f);
+            var projectLayout = _projectStateText.GetComponent<LayoutElement>();
+            projectLayout.minWidth = 100f;
+            projectLayout.flexibleWidth = 1f;
+            _projectStateText.overflowMode = TextOverflowModes.Ellipsis;
+        }
+
+        private void BuildTimelineToolbar(Transform parent)
+        {
+            var row = UiFactory.CreateRow(parent, 38f);
+            UiFactory.Stretch(row);
+            var layout = row.GetComponent<HorizontalLayoutGroup>();
+            layout.padding = new RectOffset(8, 8, 3, 3);
+            layout.spacing = 5f;
+
             UiFactory.CreateButton(row, "|<", JumpToStart, 42f);
             UiFactory.CreateButton(row, "Play", Play, 58f);
             UiFactory.CreateButton(row, "Pause", Pause, 62f);
             UiFactory.CreateButton(row, "Stop", Stop, 58f);
             UiFactory.CreateButton(row, ">|", JumpToEnd, 42f);
-            _timeText = UiFactory.CreateLabel(row, "0.000 / 10.000 s", 140f);
+            _timeText = UiFactory.CreateLabel(row, "0.000 / 10.000 s", 150f);
 
+            AddVerticalSeparator(row);
             _loopToggle = UiFactory.CreateToggle(row, "Loop", false);
             _loopToggle.onValueChanged.AddListener(v =>
             {
                 if (!_buildingUi) Document.Execute(d => d.editorSettings.loop = v);
             });
-
             _snapToggle = UiFactory.CreateToggle(row, "Snap", true);
             _snapToggle.onValueChanged.AddListener(v =>
             {
                 if (!_buildingUi) Document.Execute(d => d.editorSettings.snapEnabled = v);
             });
 
-            _multiSelectToggle = UiFactory.CreateToggle(row, "Multi", false);
-            UiFactory.CreateButton(row, "Zoom -", ZoomOut, 64f);
-            UiFactory.CreateButton(row, "Zoom +", ZoomIn, 64f);
-            _undoButton = UiFactory.CreateButton(row, "Undo", () => Document.Undo(), 54f);
-            _redoButton = UiFactory.CreateButton(row, "Redo", () => Document.Redo(), 54f);
-            UiFactory.CreateButton(row, "Copy", CopySelected, 54f);
-            UiFactory.CreateButton(row, "Paste", Paste, 54f);
-            UiFactory.CreateButton(row, "Duplicate", Duplicate, 70f);
-            UiFactory.CreateButton(row, "Delete", DeleteSelection, 60f);
+            var spacer = UiFactory.CreateUIObject("ToolbarSpacer", row);
+            var spacerLayout = spacer.AddComponent<LayoutElement>();
+            spacerLayout.flexibleWidth = 1f;
+            spacerLayout.minWidth = 8f;
+
+            UiFactory.CreateButton(row, "Zoom -", ZoomOut, 68f);
+            UiFactory.CreateButton(row, "Zoom +", ZoomIn, 68f);
         }
 
-        private void BuildInspectorRow(Transform parent)
+        private static void AddVerticalSeparator(Transform parent)
         {
-            var row = UiFactory.CreateRow(parent, 38f);
-            UiFactory.CreateLabel(row, "Unit Name", 62f);
-            _unitNameInput = UiFactory.CreateInput(row, string.Empty, 135f);
-            _unitNameInput.onEndEdit.AddListener(SetSelectedUnitName);
+            var go = UiFactory.CreateUIObject("Separator", parent);
+            var le = go.AddComponent<LayoutElement>();
+            le.preferredWidth = 1f;
+            le.preferredHeight = 24f;
+            UiFactory.AddImage(go, new Color(0.28f, 0.28f, 0.28f, 1f)).raycastTarget = false;
+        }
 
-            UiFactory.CreateLabel(row, "KF Time(s)", 62f);
-            _keyframeTimeInput = UiFactory.CreateInput(row, string.Empty, 72f);
+        private void BuildSelectionInspector(Transform parent)
+        {
+            _selectionInspectorContent = UiFactory.CreateUIObject("ColorKeyframeInspector", parent);
+            var rt = (RectTransform)_selectionInspectorContent.transform;
+            UiFactory.Stretch(rt);
+            var layout = _selectionInspectorContent.AddComponent<HorizontalLayoutGroup>();
+            layout.padding = new RectOffset(8, 8, 4, 4);
+            layout.spacing = 6f;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = true;
+
+            var title = UiFactory.CreateLabel(_selectionInspectorContent.transform, "Color Keyframe", 106f);
+            title.fontStyle = FontStyles.Bold;
+            UiFactory.CreateLabel(_selectionInspectorContent.transform, "Time", 34f);
+            _keyframeTimeInput = UiFactory.CreateInput(_selectionInspectorContent.transform, string.Empty, 78f);
             _keyframeTimeInput.contentType = TMP_InputField.ContentType.DecimalNumber;
             _keyframeTimeInput.onEndEdit.AddListener(SetSelectedColorKeyframeTimeFromText);
+            UiFactory.CreateLabel(_selectionInspectorContent.transform, "s", 16f);
+            UiFactory.CreateLabel(_selectionInspectorContent.transform, "Color", 38f);
 
-            UiFactory.CreateLabel(row, "KF RGB", 44f);
-            _colorR = UiFactory.CreateInput(row, string.Empty, 50f);
-            _colorG = UiFactory.CreateInput(row, string.Empty, 50f);
-            _colorB = UiFactory.CreateInput(row, string.Empty, 50f);
-            _colorR.contentType = _colorG.contentType = _colorB.contentType = TMP_InputField.ContentType.DecimalNumber;
-            _colorR.onEndEdit.AddListener(_ => ApplyKeyframeRgb());
-            _colorG.onEndEdit.AddListener(_ => ApplyKeyframeRgb());
-            _colorB.onEndEdit.AddListener(_ => ApplyKeyframeRgb());
+            var swatchGo = UiFactory.CreateUIObject("ColorSwatch", _selectionInspectorContent.transform);
+            var swatchLayout = swatchGo.AddComponent<LayoutElement>();
+            swatchLayout.preferredWidth = 32f;
+            swatchLayout.preferredHeight = 28f;
+            _colorSwatchImage = UiFactory.AddImage(swatchGo, Color.black);
+            _colorSwatchButton = swatchGo.AddComponent<Button>();
+            _colorSwatchButton.targetGraphic = _colorSwatchImage;
+            var outline = swatchGo.AddComponent<Outline>();
+            outline.effectColor = new Color(0.75f, 0.75f, 0.75f, 1f);
+            outline.effectDistance = new Vector2(1f, 1f);
+            _colorSwatchButton.onClick.AddListener(OpenHsvColorPicker);
 
-            _colorPickerButton = UiFactory.CreateButton(row, "KF HSV", OpenHsvColorPicker, 58f);
-            var previewGo = UiFactory.CreateUIObject("ColorPreview", row);
-            _colorPreview = UiFactory.AddImage(previewGo, new Color(0.25f, 0.25f, 0.25f, 1f));
-            _colorPreview.raycastTarget = false;
-            var previewLayout = previewGo.AddComponent<LayoutElement>();
-            previewLayout.preferredWidth = 26f;
-            previewLayout.preferredHeight = 26f;
+            var spacer = UiFactory.CreateUIObject("InspectorSpacer", _selectionInspectorContent.transform);
+            spacer.AddComponent<LayoutElement>().flexibleWidth = 1f;
+            _selectionInspectorContent.SetActive(false);
+        }
 
-            var hint = UiFactory.CreateLabel(
-                row,
-                "Double-click: add keyframe / Ctrl-click or Multi: multi-select",
-                390f);
-            var hintLayout = hint.GetComponent<LayoutElement>();
-            if (hintLayout != null) hintLayout.flexibleWidth = 1f;
+        private void OpenFileMenu(RectTransform anchor)
+        {
+            _popup.ShowMenu(GetPopupAnchorScreenPosition(anchor), new[]
+            {
+                RuntimeMenuItem.Command("New", RequestNew),
+                RuntimeMenuItem.Command("Open...", OpenProject),
+                RuntimeMenuItem.Command("Save", Save),
+                RuntimeMenuItem.Command("Save As...", SaveAs),
+                RuntimeMenuItem.Separator(),
+                RuntimeMenuItem.Command("Export...", Export),
+                RuntimeMenuItem.Separator(),
+                RuntimeMenuItem.Command("Exit", RequestExit)
+            });
+        }
+
+        private void OpenViewMenu(RectTransform anchor)
+        {
+            _popup.ShowMenu(GetPopupAnchorScreenPosition(anchor), new[]
+            {
+                RuntimeMenuItem.Command("Zoom In", ZoomIn),
+                RuntimeMenuItem.Command("Zoom Out", ZoomOut)
+            });
+        }
+
+        private void OpenHelpMenu(RectTransform anchor)
+        {
+            _popup.ShowMenu(GetPopupAnchorScreenPosition(anchor), new[]
+            {
+                RuntimeMenuItem.Command("About", () => SetStatus("Lighting Scenario Tool", false))
+            });
+        }
+
+        private Vector2 GetPopupAnchorScreenPosition(RectTransform anchor)
+        {
+            if (anchor == null) return ShortcutInput.PointerPosition;
+            var corners = new Vector3[4];
+            anchor.GetWorldCorners(corners);
+            var camera = _canvas != null && _canvas.renderMode != RenderMode.ScreenSpaceOverlay ? _canvas.worldCamera : null;
+            return RectTransformUtility.WorldToScreenPoint(camera, corners[0]);
         }
 
         private void OnDocumentChanged()
@@ -286,16 +383,10 @@ namespace LightingScenarioTool
         {
             _buildingUi = true;
             _scenarioNameInput?.SetTextWithoutNotify(Document.Data.metadata.scenarioName);
-            _durationInput?.SetTextWithoutNotify(Document.Data.metadata.duration.ToString("0.###"));
-            if (_scenarioIdText != null)
-            {
-                var id = Document.Data.metadata.scenarioId ?? string.Empty;
-                _scenarioIdText.text = "ID " + id.Substring(0, Mathf.Min(10, id.Length));
-            }
+            _durationInput?.SetTextWithoutNotify(Document.Data.metadata.duration.ToString("0.000"));
+            RefreshProjectStateDisplay();
             if (_loopToggle != null) _loopToggle.SetIsOnWithoutNotify(Document.Data.editorSettings.loop);
             if (_snapToggle != null) _snapToggle.SetIsOnWithoutNotify(Document.Data.editorSettings.snapEnabled);
-            if (_undoButton != null) _undoButton.interactable = Document.CanUndo;
-            if (_redoButton != null) _redoButton.interactable = Document.CanRedo;
             RefreshTimeLabel();
             _buildingUi = false;
         }
@@ -315,6 +406,16 @@ namespace LightingScenarioTool
         }
 
         public void RefreshPreview() => _preview?.RefreshColors();
+
+        public void SetPreviewLightSizeFromUi(float value)
+        {
+            if (_buildingUi) return;
+            var clamped = Mathf.Clamp(value, 20f, 120f);
+            Document.Data.editorSettings.previewLightSize = clamped;
+            Document.MarkDirtyWithoutNotification();
+            RefreshProjectStateDisplay();
+            _preview?.RefreshLightSizes();
+        }
 
         public void RefreshTimelineGeometry()
         {
@@ -345,6 +446,33 @@ namespace LightingScenarioTool
 
         public bool IsColorKeyframeSelected(string keyframeId) =>
             !string.IsNullOrEmpty(keyframeId) && SelectedColorKeyframeIds.Contains(keyframeId);
+
+        public void SetColorKeyframeSelection(IEnumerable<string> keyframeIds, bool additive)
+        {
+            var validIds = (keyframeIds ?? Enumerable.Empty<string>())
+                .Where(id => !string.IsNullOrEmpty(id) && Document.FindColorKeyframe(id) != null)
+                .Distinct()
+                .ToList();
+
+            if (!additive) SelectedColorKeyframeIds.Clear();
+            foreach (var id in validIds) SelectedColorKeyframeIds.Add(id);
+
+            if (validIds.Count > 0)
+                _primarySelectedColorKeyframeId = validIds[validIds.Count - 1];
+            else if (!additive || SelectedColorKeyframeIds.Count == 0)
+                _primarySelectedColorKeyframeId = SelectedColorKeyframeIds.FirstOrDefault();
+
+            var selectedUnitIds = SelectedColorKeyframeIds
+                .Select(id => Document.FindUnitForColorKeyframe(id)?.unitId)
+                .Where(id => !string.IsNullOrEmpty(id))
+                .Distinct()
+                .ToList();
+            SelectedUnitId = selectedUnitIds.Count == 1 ? selectedUnitIds[0] : null;
+
+            _timeline?.RefreshSelection();
+            _preview?.RefreshSelection();
+            RefreshInspector();
+        }
 
         public void SelectColorKeyframe(
             string unitId,
@@ -449,6 +577,17 @@ namespace LightingScenarioTool
             RefreshInspector();
         }
 
+        public void SetUnitName(string unitId, string value)
+        {
+            if (string.IsNullOrEmpty(unitId)) return;
+            var text = string.IsNullOrWhiteSpace(value) ? unitId : value.Trim();
+            Document.Execute(d =>
+            {
+                var unit = d.lightingUnits.FirstOrDefault(x => x.unitId == unitId);
+                if (unit != null) unit.displayName = text;
+            });
+        }
+
         public void SetTrackLocked(string unitId, bool value) => Document.Execute(d =>
         {
             var u = d.lightingUnits.FirstOrDefault(x => x.unitId == unitId);
@@ -502,13 +641,26 @@ namespace LightingScenarioTool
 
             var ctrl = ShortcutInput.CtrlPressed;
             var shift = ShortcutInput.ShiftPressed;
+
+            // Project commands. Keep these ahead of editing shortcuts so the
+            // standard project shortcuts always resolve unambiguously.
+            if (ctrl && !shift && ShortcutInput.NPressedThisFrame) { RequestNew(); return; }
+            if (ctrl && !shift && ShortcutInput.OPressedThisFrame) { OpenProject(); return; }
+            if (ctrl && !shift && ShortcutInput.SPressedThisFrame) { Save(); return; }
+
             if (ctrl && ShortcutInput.ZPressedThisFrame)
             {
                 if (shift) Document.Redo(); else Document.Undo();
                 return;
             }
             if (ctrl && ShortcutInput.CPressedThisFrame) { CopySelected(); return; }
-            if (ctrl && ShortcutInput.VPressedThisFrame) { Paste(); return; }
+            if (ctrl && ShortcutInput.VPressedThisFrame)
+            {
+                // For Lighting Units, Ctrl+V creates a clean unit (no Lock/Mute/Keyframes),
+                // while Ctrl+Shift+V pastes the complete copied unit.
+                Paste(shift);
+                return;
+            }
             if (ctrl && ShortcutInput.DPressedThisFrame) { Duplicate(); return; }
             if (ShortcutInput.DeletePressedThisFrame) { DeleteSelection(); return; }
             if (ShortcutInput.HomePressedThisFrame) { JumpToStart(); return; }
@@ -532,10 +684,7 @@ namespace LightingScenarioTool
 
         private void RequestNew()
         {
-            if (!Document.IsDirty) NewNow();
-            else _popup.ShowConfirm(
-                "Unsaved changes exist. Create a new scenario and discard them?",
-                NewNow);
+            RequestUnsavedChangesAction("create a new project", NewNow);
         }
 
         private void NewNow()
@@ -544,52 +693,94 @@ namespace LightingScenarioTool
             SelectedUnitId = null;
             SelectedColorKeyframeIds.Clear();
             _primarySelectedColorKeyframeId = null;
-            _clipboard.Clear();
+            ClearClipboard();
             Document.NewDocument();
-            SetStatus("New scenario created.", false);
+            SetStatus("New project created.", false);
         }
 
-        private void BrowseProjectFile()
+        private void OpenProject()
         {
-            var initial = _repository.ResolvePath(_pathInput != null ? _pathInput.text : null);
-            if (!ProjectFilePicker.TryPickOpenProjectFile(initial, out var path)) return;
-            _pathInput.SetTextWithoutNotify(path);
-            SetStatus("Selected: " + path, false);
+            RequestUnsavedChangesAction("open another project", PickAndLoadProject);
         }
 
-        private void BrowsePreviewBackgroundImage()
+        private void PickAndLoadProject()
+        {
+            if (!ProjectFilePicker.TryPickOpenProjectFile(GetPickerInitialPath(), out var path)) return;
+            try
+            {
+                LoadNow(_repository.ResolvePath(path));
+            }
+            catch (Exception ex)
+            {
+                SetStatus("Open failed: " + ex.Message, true);
+            }
+        }
+
+        public void BrowsePreviewBackgroundImage()
         {
             var current = Document.Data.editorSettings.previewBackgroundImagePath;
             if (!ProjectFilePicker.TryPickOpenImageFile(current, out var path)) return;
             Document.Execute(d => d.editorSettings.previewBackgroundImagePath = path);
-            SetStatus("Preview background: " + path, false);
+            SetStatus("Preview background: " + Path.GetFileName(path), false);
+        }
+
+        private void SaveAs()
+        {
+            TrySaveAs();
+        }
+
+        private bool TrySaveAs()
+        {
+            var initial = !string.IsNullOrWhiteSpace(Document.CurrentProjectPath)
+                ? Document.CurrentProjectPath
+                : GetPickerInitialPath();
+            if (!ProjectFilePicker.TryPickSaveProjectFile(initial, out var path)) return false;
+            return TrySaveToPath(path);
         }
 
         private void Save()
         {
+            TrySaveCurrentProject();
+        }
+
+        private bool TrySaveCurrentProject()
+        {
+            if (string.IsNullOrWhiteSpace(Document.CurrentProjectPath))
+                return TrySaveAs();
+
+            return TrySaveToPath(Document.CurrentProjectPath);
+        }
+
+        private bool TrySaveToPath(string path)
+        {
             try
             {
-                _repository.Save(_pathInput.text, Document.Data);
-                Document.MarkSaved();
-                SetStatus("Saved: " + _repository.ResolvePath(_pathInput.text), false);
+                var resolved = _repository.ResolvePath(path);
+                _repository.Save(resolved, Document.Data);
+                Document.MarkSaved(resolved);
+                SetStatus("Saved: " + Path.GetFileName(resolved), false);
+                return true;
             }
             catch (Exception ex)
             {
                 SetStatus("Save failed: " + ex.Message, true);
+                return false;
             }
         }
 
-        private void Load()
+        private void LoadNow(string path)
         {
             try
             {
                 _isPlaying = false;
-                var data = _repository.Load(_pathInput.text);
+                var resolved = _repository.ResolvePath(path);
+                var data = _repository.Load(resolved);
                 SelectedUnitId = null;
                 SelectedColorKeyframeIds.Clear();
                 _primarySelectedColorKeyframeId = null;
-                Document.LoadDocument(data);
-                SetStatus("Loaded: " + _repository.ResolvePath(_pathInput.text), false);
+                ClearClipboard();
+                Document.LoadDocument(data, resolved);
+                SetStatus("Loaded: " + Path.GetFileName(resolved), false);
             }
             catch (Exception ex)
             {
@@ -601,11 +792,19 @@ namespace LightingScenarioTool
         {
             try
             {
-                var json = _repository.ResolvePath(_pathInput.text);
-                var dir = Path.GetDirectoryName(json) ?? Application.persistentDataPath;
+                if (string.IsNullOrWhiteSpace(Document.CurrentProjectPath))
+                {
+                    SetStatus("Save the project before exporting.", true);
+                    return;
+                }
+
+                var json = _repository.ResolvePath(Document.CurrentProjectPath);
+                var dir = Path.GetDirectoryName(json);
+                if (string.IsNullOrEmpty(dir))
+                    throw new InvalidOperationException("Export directory could not be determined.");
                 var path = Path.Combine(dir, Path.GetFileNameWithoutExtension(json) + ".bin");
                 _exporter.Export(path, Document.Data);
-                SetStatus("Dummy export: " + path, false);
+                SetStatus("Dummy export: " + Path.GetFileName(path), false);
             }
             catch (Exception ex)
             {
@@ -615,10 +814,54 @@ namespace LightingScenarioTool
 
         private void RequestExit()
         {
-            if (Document.IsDirty)
-                _popup.ShowConfirm("Unsaved changes exist. Exit without saving?", QuitNow);
+            RequestUnsavedChangesAction("exit the application", QuitNow);
+        }
+
+        private void RequestUnsavedChangesAction(string actionName, Action continueAction)
+        {
+            if (!Document.IsDirty)
+            {
+                continueAction?.Invoke();
+                return;
+            }
+
+            _popup.ShowSaveDiscardCancel(
+                $"Unsaved changes exist. Save before you {actionName}?",
+                () =>
+                {
+                    if (TrySaveCurrentProject()) continueAction?.Invoke();
+                },
+                () => continueAction?.Invoke());
+        }
+
+        private string GetPickerInitialPath()
+        {
+            return !string.IsNullOrWhiteSpace(Document.CurrentProjectPath)
+                ? Document.CurrentProjectPath
+                : null;
+        }
+
+        private string GetProjectDisplayName()
+        {
+            string name;
+            if (string.IsNullOrWhiteSpace(Document.CurrentProjectPath))
+            {
+                name = "Untitled";
+            }
             else
-                QuitNow();
+            {
+                try { name = Path.GetFileName(Document.CurrentProjectPath); }
+                catch { name = Document.CurrentProjectPath; }
+                if (string.IsNullOrWhiteSpace(name)) name = "Untitled";
+            }
+
+            return Document.IsDirty ? name + " *" : name;
+        }
+
+        private void RefreshProjectStateDisplay()
+        {
+            if (_projectStateText != null)
+                _projectStateText.text = GetProjectDisplayName();
         }
 
         private static void QuitNow()
@@ -661,28 +904,11 @@ namespace LightingScenarioTool
             Document.Execute(d => d.metadata.duration = duration);
         }
 
-        private void SetSelectedUnitName(string value)
-        {
-            if (_buildingUi || string.IsNullOrEmpty(SelectedUnitId)) return;
-            var id = SelectedUnitId;
-            var text = string.IsNullOrWhiteSpace(value) ? id : value.Trim();
-            Document.Execute(d =>
-            {
-                var u = d.lightingUnits.FirstOrDefault(x => x.unitId == id);
-                if (u != null) u.displayName = text;
-            });
-        }
 
         private void RefreshInspector()
         {
-            if (_unitNameInput == null) return;
+            if (_selectionInspectorContent == null || _keyframeTimeInput == null || _colorSwatchButton == null) return;
             _buildingUi = true;
-
-            var unit = string.IsNullOrEmpty(SelectedUnitId)
-                ? null
-                : Document.FindUnit(SelectedUnitId);
-            _unitNameInput.interactable = unit != null;
-            _unitNameInput.SetTextWithoutNotify(unit != null ? unit.displayName : string.Empty);
 
             var selectedKeys = SelectedColorKeyframeIds
                 .Select(id => Document.FindColorKeyframe(id))
@@ -692,29 +918,25 @@ namespace LightingScenarioTool
                 .Select(id => Document.FindUnitForColorKeyframe(id))
                 .Where(u => u != null)
                 .ToList();
-            var allEditable = selectedKeys.Count > 0 && selectedUnits.All(u => !u.track.locked);
+
+            var hasSelection = selectedKeys.Count > 0;
+            _selectionInspectorContent.SetActive(hasSelection);
+            if (!hasSelection)
+            {
+                _buildingUi = false;
+                return;
+            }
+
+            var allEditable = selectedUnits.Count == selectedKeys.Count && selectedUnits.All(u => !u.track.locked);
             var single = selectedKeys.Count == 1 ? selectedKeys[0] : null;
-
             _keyframeTimeInput.interactable = single != null && allEditable;
-            _keyframeTimeInput.SetTextWithoutNotify(single != null ? single.time.ToString("0.###") : string.Empty);
+            _keyframeTimeInput.SetTextWithoutNotify(single != null ? single.time.ToString("0.000") : string.Empty);
+            _colorSwatchButton.interactable = allEditable;
 
-            _colorR.interactable = _colorG.interactable = _colorB.interactable = allEditable;
-            _colorPickerButton.interactable = allEditable;
-
-            if (selectedKeys.Count > 0 && AllSameColor(selectedKeys, out var commonColor))
-            {
-                _colorR.SetTextWithoutNotify(Mathf.RoundToInt(commonColor.r * 255f).ToString());
-                _colorG.SetTextWithoutNotify(Mathf.RoundToInt(commonColor.g * 255f).ToString());
-                _colorB.SetTextWithoutNotify(Mathf.RoundToInt(commonColor.b * 255f).ToString());
-                _colorPreview.color = commonColor;
-            }
+            if (AllSameColor(selectedKeys, out var commonColor))
+                _colorSwatchImage.color = commonColor;
             else
-            {
-                _colorR.SetTextWithoutNotify(string.Empty);
-                _colorG.SetTextWithoutNotify(string.Empty);
-                _colorB.SetTextWithoutNotify(string.Empty);
-                _colorPreview.color = new Color(0.25f, 0.25f, 0.25f, 1f);
-            }
+                _colorSwatchImage.color = new Color(0.35f, 0.35f, 0.35f, 1f);
 
             _buildingUi = false;
         }
@@ -751,31 +973,10 @@ namespace LightingScenarioTool
                 SetStatus(error, true);
         }
 
-        private void ApplyKeyframeRgb()
-        {
-            if (_buildingUi || SelectedColorKeyframeIds.Count == 0) return;
-            if (!float.TryParse(_colorR.text, out var r) ||
-                !float.TryParse(_colorG.text, out var g) ||
-                !float.TryParse(_colorB.text, out var b))
-            {
-                SetStatus("RGB contains an invalid number.", true);
-                RefreshInspector();
-                return;
-            }
-
-            var color = new Color(
-                Mathf.Clamp(r, 0f, 255f) / 255f,
-                Mathf.Clamp(g, 0f, 255f) / 255f,
-                Mathf.Clamp(b, 0f, 255f) / 255f,
-                1f);
-            if (!Document.TrySetColorKeyframesColor(SelectedColorKeyframeIds, color, out var error))
-                SetStatus(error, true);
-        }
-
         private void OpenHsvColorPicker()
         {
-            if (_colorPickerButton != null)
-                OpenColorPickerForSelection((RectTransform)_colorPickerButton.transform);
+            if (_colorSwatchButton != null)
+                OpenColorPickerForSelection((RectTransform)_colorSwatchButton.transform);
         }
 
         private void ApplyHsvColor(Color color)
@@ -795,6 +996,32 @@ namespace LightingScenarioTool
 
         private void CopySelected()
         {
+            // Color Keyframes take precedence when both a track/unit and keyframes are selected.
+            if (SelectedColorKeyframeIds.Count > 0)
+            {
+                CopySelectedColorKeyframes();
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(SelectedUnitId))
+            {
+                var unit = Document.FindUnit(SelectedUnitId);
+                if (unit != null)
+                {
+                    _lightingUnitClipboardJson = JsonUtility.ToJson(unit);
+                    _lightingUnitPasteCount = 0;
+                    _clipboard.Clear();
+                    _clipboardKind = ClipboardKind.LightingUnit;
+                    SetStatus($"Copied Lighting Unit: {unit.displayName}", false);
+                    return;
+                }
+            }
+
+            SetStatus("No Color Keyframe or Lighting Unit selected.", true);
+        }
+
+        private void CopySelectedColorKeyframes()
+        {
             _clipboard.Clear();
             foreach (var id in SelectedColorKeyframeIds
                          .OrderBy(id => Document.FindColorKeyframe(id)?.time ?? 0f))
@@ -810,47 +1037,151 @@ namespace LightingScenarioTool
                 });
             }
 
-            SetStatus(
-                _clipboard.Count > 0
-                    ? $"Copied {_clipboard.Count} color keyframe(s)."
-                    : "No color keyframes selected.",
-                _clipboard.Count == 0);
+            if (_clipboard.Count > 0)
+            {
+                _lightingUnitClipboardJson = null;
+                _lightingUnitPasteCount = 0;
+                _clipboardKind = ClipboardKind.ColorKeyframes;
+                SetStatus($"Copied {_clipboard.Count} color keyframe(s).", false);
+            }
+            else
+            {
+                SetStatus("No color keyframes selected.", true);
+            }
         }
 
-        private void Paste()
+        private void Paste(bool includeLightingUnitTrackData = false)
         {
-            if (_clipboard.Count == 0)
+            if (_clipboardKind == ClipboardKind.LightingUnit)
+            {
+                PasteLightingUnit(
+                    includeLightingUnitTrackData ? "Paste With Data" : "Paste",
+                    includeLightingUnitTrackData);
+                return;
+            }
+
+            if (_clipboardKind != ClipboardKind.ColorKeyframes || _clipboard.Count == 0)
             {
                 SetStatus("Clipboard is empty.", true);
                 return;
             }
+
+            var destinationUnitId = SelectedUnitId;
+            if (string.IsNullOrEmpty(destinationUnitId) || Document.FindUnit(destinationUnitId) == null)
+            {
+                SetStatus("Select a destination track before pasting color keyframes.", true);
+                return;
+            }
+
             var earliest = _clipboard.Min(x => x.time);
-            PasteClipboardWithDelta(CurrentTime - earliest, "Paste");
+            PasteClipboardWithDelta(CurrentTime - earliest, "Paste", destinationUnitId);
         }
 
         private void Duplicate()
         {
-            if (SelectedColorKeyframeIds.Count == 0)
+            if (SelectedColorKeyframeIds.Count > 0)
             {
-                SetStatus("No color keyframes selected.", true);
+                CopySelectedColorKeyframes();
+                if (_clipboard.Count == 0) return;
+                var step = ScenarioDocument.GetGridInterval(Document.Data.editorSettings.pixelsPerSecond);
+                var max = _clipboard.Max(x => x.time);
+                var min = _clipboard.Min(x => x.time);
+                var delta = max + step <= Document.Data.metadata.duration ? step : -step;
+                if (min + delta < 0f)
+                {
+                    SetStatus("Duplicate failed because there is no room for the copied keyframes.", true);
+                    return;
+                }
+                // Duplicate keeps the selected keyframes on their original tracks.
+                PasteClipboardWithDelta(delta, "Duplicate", null);
                 return;
             }
 
-            CopySelected();
-            if (_clipboard.Count == 0) return;
-            var step = ScenarioDocument.GetGridInterval(Document.Data.editorSettings.pixelsPerSecond);
-            var max = _clipboard.Max(x => x.time);
-            var min = _clipboard.Min(x => x.time);
-            var delta = max + step <= Document.Data.metadata.duration ? step : -step;
-            if (min + delta < 0f)
+            if (!string.IsNullOrEmpty(SelectedUnitId))
             {
-                SetStatus("Duplicate failed because there is no room for the copied keyframes.", true);
-                return;
+                var source = Document.FindUnit(SelectedUnitId);
+                if (source != null)
+                {
+                    DuplicateLightingUnit(source, "Duplicate", 1, true);
+                    return;
+                }
             }
-            PasteClipboardWithDelta(delta, "Duplicate");
+
+            SetStatus("No Color Keyframe or Lighting Unit selected.", true);
         }
 
-        private void PasteClipboardWithDelta(float delta, string operationName)
+        private void PasteLightingUnit(string operationName, bool includeTrackData)
+        {
+            if (string.IsNullOrEmpty(_lightingUnitClipboardJson))
+            {
+                SetStatus("Lighting Unit clipboard is empty.", true);
+                return;
+            }
+
+            LightingUnitData source;
+            try
+            {
+                source = JsonUtility.FromJson<LightingUnitData>(_lightingUnitClipboardJson);
+            }
+            catch (Exception ex)
+            {
+                SetStatus("Lighting Unit paste failed: " + ex.Message, true);
+                return;
+            }
+
+            if (source == null)
+            {
+                SetStatus("Lighting Unit paste failed because the copied data is invalid.", true);
+                return;
+            }
+
+            _lightingUnitPasteCount++;
+            DuplicateLightingUnit(source, operationName, _lightingUnitPasteCount, includeTrackData);
+        }
+
+        private void DuplicateLightingUnit(
+            LightingUnitData source,
+            string operationName,
+            int offsetStep,
+            bool includeTrackData)
+        {
+            if (source == null) return;
+
+            const float offsetPerCopy = 0.035f;
+            var offset = offsetPerCopy * Mathf.Max(1, offsetStep);
+            var x = source.previewX + offset <= 1f
+                ? source.previewX + offset
+                : source.previewX - offset;
+            var y = source.previewY - offset >= 0f
+                ? source.previewY - offset
+                : source.previewY + offset;
+            var created = Document.DuplicateUnit(
+                source,
+                Mathf.Clamp01(x),
+                Mathf.Clamp01(y),
+                includeTrackData);
+            if (created == null)
+            {
+                SetStatus(operationName + " Lighting Unit failed.", true);
+                return;
+            }
+
+            SelectUnit(created.unitId);
+            if (includeTrackData)
+            {
+                SetStatus(
+                    $"{operationName} Lighting Unit: {created.displayName} (Lock/Mute/Color Keyframes included)",
+                    false);
+            }
+            else
+            {
+                SetStatus(
+                    $"{operationName} Lighting Unit: {created.displayName} (Lock/Mute/Color Keyframes cleared)",
+                    false);
+            }
+        }
+
+        private void PasteClipboardWithDelta(float delta, string operationName, string destinationUnitId)
         {
             const float epsilon = 0.0001f;
             var before = Document.CaptureState();
@@ -859,10 +1190,20 @@ namespace LightingScenarioTool
 
             foreach (var source in _clipboard)
             {
-                var unit = Document.FindUnit(source.unitId);
-                if (unit == null || unit.track.locked)
+                // Paste targets the currently selected track. Duplicate passes null and therefore
+                // preserves each copied keyframe's original track.
+                var targetUnitId = string.IsNullOrEmpty(destinationUnitId)
+                    ? source.unitId
+                    : destinationUnitId;
+                var unit = Document.FindUnit(targetUnitId);
+                if (unit == null)
                 {
-                    SetStatus(operationName + " failed because a source track is missing or locked.", true);
+                    SetStatus(operationName + " failed because the destination track does not exist.", true);
+                    return;
+                }
+                if (unit.track.locked)
+                {
+                    SetStatus(operationName + " failed because the destination track is locked.", true);
                     return;
                 }
 
@@ -915,6 +1256,14 @@ namespace LightingScenarioTool
             _preview?.RefreshSelection();
             RefreshInspector();
             SetStatus($"{operationName}: {plans.Count} color keyframe(s).", false);
+        }
+
+        private void ClearClipboard()
+        {
+            _clipboard.Clear();
+            _clipboardKind = ClipboardKind.None;
+            _lightingUnitClipboardJson = null;
+            _lightingUnitPasteCount = 0;
         }
 
         private void CleanupSelection()

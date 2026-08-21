@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using UnityEngine;
 
@@ -5,17 +6,28 @@ namespace LightingScenarioTool
 {
     public sealed class JsonScenarioRepository
     {
+        /// <summary>
+        /// Normalizes an explicitly supplied project path. Project files are never redirected
+        /// to Application.persistentDataPath / AppData.
+        /// </summary>
         public string ResolvePath(string path)
         {
-            if (string.IsNullOrWhiteSpace(path)) path = "scenario.json";
-            return Path.IsPathRooted(path) ? path : Path.Combine(Application.persistentDataPath, path);
+            if (string.IsNullOrWhiteSpace(path))
+                throw new ArgumentException("A project file path has not been selected.", nameof(path));
+
+            var resolved = Path.GetFullPath(path.Trim());
+            if (string.IsNullOrEmpty(Path.GetExtension(resolved))) resolved += ".json";
+            return resolved;
         }
 
         public void Save(string path, ScenarioData data)
         {
             var resolved = ResolvePath(path);
             var directory = Path.GetDirectoryName(resolved);
-            if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+            if (string.IsNullOrEmpty(directory))
+                throw new InvalidOperationException("The project save directory could not be determined.");
+
+            Directory.CreateDirectory(directory);
             File.WriteAllText(resolved, JsonUtility.ToJson(data, true));
         }
 

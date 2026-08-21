@@ -43,6 +43,9 @@ namespace LightingScenarioTool
         }
 
         public static bool ZPressedThisFrame => WasPressed(KeyCode.Z);
+        public static bool NPressedThisFrame => WasPressed(KeyCode.N);
+        public static bool OPressedThisFrame => WasPressed(KeyCode.O);
+        public static bool SPressedThisFrame => WasPressed(KeyCode.S);
         public static bool CPressedThisFrame => WasPressed(KeyCode.C);
         public static bool VPressedThisFrame => WasPressed(KeyCode.V);
         public static bool DPressedThisFrame => WasPressed(KeyCode.D);
@@ -106,6 +109,9 @@ namespace LightingScenarioTool
             switch (keyCode)
             {
                 case KeyCode.Z: return keyboard.zKey.wasPressedThisFrame;
+                case KeyCode.N: return keyboard.nKey.wasPressedThisFrame;
+                case KeyCode.O: return keyboard.oKey.wasPressedThisFrame;
+                case KeyCode.S: return keyboard.sKey.wasPressedThisFrame;
                 case KeyCode.C: return keyboard.cKey.wasPressedThisFrame;
                 case KeyCode.V: return keyboard.vKey.wasPressedThisFrame;
                 case KeyCode.D: return keyboard.dKey.wasPressedThisFrame;

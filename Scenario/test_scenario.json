@@ -1,0 +1,109 @@
+{
+    "metadata": {
+        "scenarioId": "9ec34cbf3c314a95acca5b44cc0e2090",
+        "scenarioName": "TestScenario",
+        "dataFormatVersion": "3.0.0",
+        "duration": 10.0
+    },
+    "lightingUnits": [
+        {
+            "unitId": "Light001",
+            "displayName": "Light001",
+            "previewX": 0.2869144380092621,
+            "previewY": 0.6743037700653076,
+            "track": {
+                "locked": false,
+                "muted": false,
+                "colorKeyframes": [
+                    {
+                        "keyframeId": "bd9e2863362b41fcb6234e2274bdf7c9",
+                        "time": 1.6149483919143677,
+                        "color": {
+                            "r": 0.0,
+                            "g": 0.0,
+                            "b": 0.0
+                        }
+                    },
+                    {
+                        "keyframeId": "16309d3b8ca8424babf68fe7b43749ad",
+                        "time": 3.0,
+                        "color": {
+                            "r": 0.0,
+                            "g": 0.5388245582580566,
+                            "b": 1.0
+                        }
+                    },
+                    {
+                        "keyframeId": "5e34d2dab1ad4830a9934430d9d80ceb",
+                        "time": 5.2553324699401859,
+                        "color": {
+                            "r": 1.0,
+                            "g": 0.0941176563501358,
+                            "b": 0.0
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "unitId": "Light002",
+            "displayName": "Light002",
+            "previewX": 0.41724446415901186,
+            "previewY": 0.7120915651321411,
+            "track": {
+                "locked": false,
+                "muted": false,
+                "colorKeyframes": []
+            }
+        },
+        {
+            "unitId": "Light003",
+            "displayName": "Light001 Copy",
+            "previewX": 0.5550936460494995,
+            "previewY": 0.7050063610076904,
+            "track": {
+                "locked": false,
+                "muted": false,
+                "colorKeyframes": [
+                    {
+                        "keyframeId": "fe48ce72b0484db8aefa502d7b2c4d29",
+                        "time": 1.9694384336471558,
+                        "color": {
+                            "r": 0.0,
+                            "g": 0.0,
+                            "b": 0.0
+                        }
+                    },
+                    {
+                        "keyframeId": "9efe97079ea940f28411d12d25a47a52",
+                        "time": 3.354490041732788,
+                        "color": {
+                            "r": 0.0,
+                            "g": 0.5388245582580566,
+                            "b": 1.0
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "unitId": "Light004",
+            "displayName": "Light001 Copy 2",
+            "previewX": 0.7029681205749512,
+            "previewY": 0.6695802807807922,
+            "track": {
+                "locked": false,
+                "muted": false,
+                "colorKeyframes": []
+            }
+        }
+    ],
+    "editorSettings": {
+        "currentTime": 2.9896793365478517,
+        "loop": false,
+        "snapEnabled": true,
+        "pixelsPerSecond": 80.00000762939453,
+        "previewLightSize": 33.80018997192383,
+        "previewBackgroundImagePath": "C:\\Users\\tetsuro\\xr-ux-simulator\\Assets\\Textures\\Background.png"
+    }
+}
