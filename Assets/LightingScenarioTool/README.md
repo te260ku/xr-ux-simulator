@@ -113,3 +113,10 @@ Presets are stored as application-level preferences (PlayerPrefs), are shared ac
 - Hold Ctrl while marquee-dragging to add the enclosed keyframes to the current selection.
 - Dragging a Color Keyframe itself continues to move the selected keyframe(s), not start marquee selection.
 - An `Exit` button is available at the upper-right of the Menu Bar and uses the same unsaved-changes confirmation as File > Exit.
+
+## Windows standalone file dialogs
+
+- Editor uses `UnityEditor.EditorUtility` file panels.
+- Windows standalone builds use the native Unicode `GetOpenFileNameW` / `GetSaveFileNameW` common dialogs.
+- The `OPENFILENAMEW` string buffers are allocated as unmanaged writable memory instead of marshalling `StringBuilder` fields. This is intended to behave consistently under both Mono and IL2CPP player builds.
+- If the native dialog fails at the OS level, the application status displays the `CommDlgExtendedError` code. Closing/cancelling a dialog normally does not display an error.

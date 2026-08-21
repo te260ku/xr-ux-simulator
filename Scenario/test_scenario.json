@@ -94,12 +94,22 @@
             "track": {
                 "locked": false,
                 "muted": false,
-                "colorKeyframes": []
+                "colorKeyframes": [
+                    {
+                        "keyframeId": "0c26fafd5b2746d8b548cabaf0eff662",
+                        "time": 2.2333333492279054,
+                        "color": {
+                            "r": 0.06577521562576294,
+                            "g": 1.0,
+                            "b": 0.0
+                        }
+                    }
+                ]
             }
         }
     ],
     "editorSettings": {
-        "currentTime": 2.9896793365478517,
+        "currentTime": 4.59999942779541,
         "loop": false,
         "snapEnabled": true,
         "pixelsPerSecond": 80.00000762939453,

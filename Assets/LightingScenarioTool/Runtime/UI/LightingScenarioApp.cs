@@ -705,7 +705,11 @@ namespace LightingScenarioTool
 
         private void PickAndLoadProject()
         {
-            if (!ProjectFilePicker.TryPickOpenProjectFile(GetPickerInitialPath(), out var path)) return;
+            if (!ProjectFilePicker.TryPickOpenProjectFile(GetPickerInitialPath(), out var path))
+            {
+                ReportFilePickerErrorIfAny();
+                return;
+            }
             try
             {
                 LoadNow(_repository.ResolvePath(path));
@@ -719,9 +723,19 @@ namespace LightingScenarioTool
         public void BrowsePreviewBackgroundImage()
         {
             var current = Document.Data.editorSettings.previewBackgroundImagePath;
-            if (!ProjectFilePicker.TryPickOpenImageFile(current, out var path)) return;
+            if (!ProjectFilePicker.TryPickOpenImageFile(current, out var path))
+            {
+                ReportFilePickerErrorIfAny();
+                return;
+            }
             Document.Execute(d => d.editorSettings.previewBackgroundImagePath = path);
             SetStatus("Preview background: " + Path.GetFileName(path), false);
+        }
+
+        private void ReportFilePickerErrorIfAny()
+        {
+            if (!string.IsNullOrWhiteSpace(ProjectFilePicker.LastErrorMessage))
+                SetStatus(ProjectFilePicker.LastErrorMessage, true);
         }
 
         private void SaveAs()
@@ -734,7 +748,11 @@ namespace LightingScenarioTool
             var initial = !string.IsNullOrWhiteSpace(Document.CurrentProjectPath)
                 ? Document.CurrentProjectPath
                 : GetPickerInitialPath();
-            if (!ProjectFilePicker.TryPickSaveProjectFile(initial, out var path)) return false;
+            if (!ProjectFilePicker.TryPickSaveProjectFile(initial, out var path))
+            {
+                ReportFilePickerErrorIfAny();
+                return false;
+            }
             return TrySaveToPath(path);
         }
 
