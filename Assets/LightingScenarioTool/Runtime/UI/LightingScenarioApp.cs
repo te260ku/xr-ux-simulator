@@ -13,6 +13,7 @@ namespace LightingScenarioTool
     [RequireComponent(typeof(Canvas))]
     [RequireComponent(typeof(CanvasScaler))]
     [RequireComponent(typeof(GraphicRaycaster))]
+    [RequireComponent(typeof(AppTheme))]
     public sealed class LightingScenarioApp : MonoBehaviour
     {
         private sealed class KeyframeClipboardItem
@@ -36,40 +37,85 @@ namespace LightingScenarioTool
         private string _lightingUnitClipboardJson;
         private int _lightingUnitPasteCount;
 
-        private Canvas _canvas;
-        private RectTransform _overlay;
+        [SerializeField] private AppTheme _theme;
+        [SerializeField] private Canvas _canvas;
+        [SerializeField] private RectTransform _overlay;
+        [SerializeField] private LightingScenarioUiPrefabCatalog _uiPrefabs;
         private RuntimePopup _popup;
-        private PreviewPanel _preview;
-        private TimelinePanel _timeline;
+        [SerializeField] private PreviewPanel _preview;
+        [SerializeField] private TimelinePanel _timeline;
 
-        private TMP_InputField _scenarioNameInput;
-        private TMP_InputField _durationInput;
-        private TMP_Text _projectStateText;
-        private TMP_Text _timeText;
-        private TMP_Text _statusText;
-        private Toggle _loopToggle;
-        private Toggle _snapToggle;
+        [SerializeField] private TMP_InputField _scenarioNameInput;
+        [SerializeField] private TMP_InputField _durationInput;
+        [SerializeField] private TMP_Text _projectStateText;
+        [SerializeField] private TMP_Text _timeText;
+        [SerializeField] private TMP_Text _statusText;
+        [SerializeField] private Button _fullscreenButton;
+        [SerializeField] private Toggle _loopToggle;
+        [SerializeField] private Toggle _snapToggle;
 
-        private GameObject _selectionInspectorContent;
-        private TMP_InputField _keyframeTimeInput;
-        private Button _colorSwatchButton;
-        private Image _colorSwatchImage;
+        [SerializeField] private GameObject _selectionInspectorContent;
+        [SerializeField] private TMP_InputField _keyframeTimeInput;
+        [SerializeField] private Button _colorSwatchButton;
+        [SerializeField] private Image _colorSwatchImage;
 
         private bool _isPlaying;
         private bool _buildingUi;
         private string _primarySelectedColorKeyframeId;
+        private int _windowedWidth;
+        private int _windowedHeight;
 
         public ScenarioDocument Document { get; } = new ScenarioDocument();
         public string SelectedUnitId { get; private set; }
         public HashSet<string> SelectedColorKeyframeIds { get; } = new HashSet<string>();
         public float CurrentTime => Document.Data.editorSettings.currentTime;
-        public float PreviewLightSize => Mathf.Clamp(Document.Data.editorSettings.previewLightSize <= 0f ? 54f : Document.Data.editorSettings.previewLightSize, 20f, 120f);
+        public float PreviewLightSize => Mathf.Clamp(
+            Document.Data.editorSettings.previewLightSize <= 0f
+                ? ScenarioDataUtility.DefaultPreviewLightSize
+                : Document.Data.editorSettings.previewLightSize,
+            ScenarioDataUtility.MinPreviewLightSize,
+            ScenarioDataUtility.MaxPreviewLightSize);
+        public bool ShowPreviewUnitNames => !Document.Data.editorSettings.hidePreviewUnitNames;
+        internal LightingScenarioUiPrefabCatalog UiPrefabs => _uiPrefabs;
 
         private void Awake()
         {
-            UiFactory.EnsureEventSystem();
+            _theme ??= GetComponent<AppTheme>();
+            AppTheme.SetActive(_theme);
+
+            if (EventSystem.current == null)
+                Debug.LogError("Lighting Scenario Tool requires an EventSystem in the scene. Use Tools > Lighting Scenario > Build Complete UI In Current Scene.", this);
+
+            if (Screen.fullScreenMode == FullScreenMode.Windowed)
+            {
+                _windowedWidth = Screen.width;
+                _windowedHeight = Screen.height;
+            }
+
             Document.Changed += OnDocumentChanged;
-            BuildUi();
+            if (!BindExistingUi())
+            {
+                Debug.LogError(
+                    "Lighting Scenario Tool UI hierarchy is missing. " +
+                    "Run Tools > Lighting Scenario > Build Complete UI In Current Scene once in the Editor to generate the complete UI hierarchy.",
+                    this);
+                enabled = false;
+                return;
+            }
+
+            if (_uiPrefabs == null || !_uiPrefabs.IsComplete)
+            {
+                Debug.LogError(
+                    "Lighting Scenario runtime UI prefabs are missing or incomplete. " +
+                    "Run Tools > Lighting Scenario > Build Complete UI In Current Scene in Edit Mode.", this);
+                enabled = false;
+                return;
+            }
+
+            BindUiEvents();
+            _popup = new RuntimePopup(_overlay, _uiPrefabs);
+            _timeline.Initialize(this);
+            _preview.Initialize(this);
             OnDocumentChanged();
         }
 
@@ -94,8 +140,246 @@ namespace LightingScenarioTool
             SetCurrentTime(t);
         }
 
+        private bool BindExistingUi()
+        {
+            _theme ??= GetComponent<AppTheme>();
+            AppTheme.SetActive(_theme);
+            _canvas ??= GetComponent<Canvas>();
+
+            // Prefer serialized scene references. This makes the authored UI independent of
+            // the exact hierarchy path after a designer moves or renames objects.
+            _overlay ??= FindDescendant<RectTransform>(transform, "Overlay");
+            _timeline ??= GetComponentInChildren<TimelinePanel>(true);
+            _preview ??= GetComponentInChildren<PreviewPanel>(true);
+
+            var background = FindDescendant(transform, "Background");
+            var menuBar = FindDescendant(transform, "MenuBar");
+            var scenarioHeader = FindDescendant(transform, "ScenarioHeader");
+            var toolbar = FindDescendant(transform, "TimelineToolbar");
+            var inspector = FindDescendant(transform, "ColorKeyframeInspector");
+
+            if (_scenarioNameInput == null && scenarioHeader != null)
+                _scenarioNameInput = FindComponent<TMP_InputField>(scenarioHeader, "Row/ScenarioGroup/Input")
+                    ?? FindDescendant<TMP_InputField>(scenarioHeader, "Input");
+
+            if (_durationInput == null && scenarioHeader != null)
+            {
+                var durationGroup = FindDescendant(scenarioHeader, "DurationGroup");
+                _durationInput = durationGroup != null ? FindDescendant<TMP_InputField>(durationGroup, "Input") : null;
+            }
+
+            if (_projectStateText == null)
+            {
+                var t = FindDescendant(transform, "ProjectStateText");
+                _projectStateText = t != null ? t.GetComponent<TMP_Text>() : null;
+            }
+            if (_statusText == null)
+            {
+                var t = FindDescendant(transform, "StatusText");
+                _statusText = t != null ? t.GetComponent<TMP_Text>() : null;
+            }
+            if (_fullscreenButton == null)
+            {
+                var t = FindDescendant(transform, "Button_Fullscreen");
+                _fullscreenButton = t != null ? t.GetComponent<Button>() : null;
+            }
+            if (_timeText == null)
+            {
+                var t = FindDescendant(transform, "CurrentTimeText");
+                _timeText = t != null ? t.GetComponent<TMP_Text>() : null;
+            }
+            if (_loopToggle == null)
+            {
+                var t = FindDescendant(transform, "Toggle_Loop");
+                _loopToggle = t != null ? t.GetComponent<Toggle>() : null;
+            }
+            if (_snapToggle == null)
+            {
+                var t = FindDescendant(transform, "Toggle_Snap");
+                _snapToggle = t != null ? t.GetComponent<Toggle>() : null;
+            }
+
+            if (_selectionInspectorContent == null && inspector != null)
+                _selectionInspectorContent = inspector.gameObject;
+
+            if (_keyframeTimeInput == null && inspector != null)
+            {
+                var t = FindDescendant(inspector, "Input");
+                _keyframeTimeInput = t != null ? t.GetComponent<TMP_InputField>() : null;
+            }
+            if (_colorSwatchButton == null && inspector != null)
+            {
+                var t = FindDescendant(inspector, "ColorSwatch");
+                _colorSwatchButton = t != null ? t.GetComponent<Button>() : null;
+            }
+            _colorSwatchImage ??= _colorSwatchButton != null ? _colorSwatchButton.GetComponent<Image>() : null;
+
+            return _canvas != null && _overlay != null && _timeline != null && _preview != null &&
+                   _scenarioNameInput != null && _durationInput != null && _projectStateText != null &&
+                   _timeText != null && _loopToggle != null && _snapToggle != null &&
+                   _selectionInspectorContent != null && _keyframeTimeInput != null &&
+                   _colorSwatchButton != null && _colorSwatchImage != null;
+        }
+
+        private void BindUiEvents()
+        {
+            _scenarioNameInput.onEndEdit.RemoveListener(SetScenarioName);
+            _scenarioNameInput.onEndEdit.AddListener(SetScenarioName);
+            _durationInput.contentType = TMP_InputField.ContentType.DecimalNumber;
+            _durationInput.onEndEdit.RemoveListener(SetScenarioDuration);
+            _durationInput.onEndEdit.AddListener(SetScenarioDuration);
+
+            _loopToggle.onValueChanged.RemoveListener(OnLoopChanged);
+            _loopToggle.onValueChanged.AddListener(OnLoopChanged);
+            _snapToggle.onValueChanged.RemoveListener(OnSnapChanged);
+            _snapToggle.onValueChanged.AddListener(OnSnapChanged);
+
+            _keyframeTimeInput.contentType = TMP_InputField.ContentType.DecimalNumber;
+            _keyframeTimeInput.onEndEdit.RemoveListener(SetSelectedColorKeyframeTimeFromText);
+            _keyframeTimeInput.onEndEdit.AddListener(SetSelectedColorKeyframeTimeFromText);
+            _colorSwatchButton.onClick.RemoveListener(OpenHsvColorPicker);
+            _colorSwatchButton.onClick.AddListener(OpenHsvColorPicker);
+
+            BindButton("Background/MenuBar/Row/Button_File", button => button.onClick.AddListener(() => OpenFileMenu((RectTransform)button.transform)));
+            BindButton("Background/MenuBar/Row/Button_View", button => button.onClick.AddListener(() => OpenViewMenu((RectTransform)button.transform)));
+            BindButton("Background/MenuBar/Row/Button_Help", button => button.onClick.AddListener(() => OpenHelpMenu((RectTransform)button.transform)));
+            BindButton("Background/MenuBar/Row/Button_Fullscreen", button =>
+            {
+                _fullscreenButton = button;
+                button.onClick.AddListener(ToggleFullscreenWindowMode);
+            });
+            BindButton("Background/MenuBar/Row/Button_Exit", button => button.onClick.AddListener(RequestExit));
+
+            BindButton("Background/TimelineToolbar/Row/Button_|<", button => button.onClick.AddListener(JumpToStart));
+            BindButton("Background/TimelineToolbar/Row/Button_Play", button => button.onClick.AddListener(Play));
+            BindButton("Background/TimelineToolbar/Row/Button_Pause", button => button.onClick.AddListener(Pause));
+            BindButton("Background/TimelineToolbar/Row/Button_Stop", button => button.onClick.AddListener(Stop));
+            BindButton("Background/TimelineToolbar/Row/Button_>|", button => button.onClick.AddListener(JumpToEnd));
+        }
+
+        private void BindButton(string path, Action<Button> binder)
+        {
+            var t = transform.Find(path);
+            if (t == null)
+            {
+                var slash = path.LastIndexOf('/');
+                var leafName = slash >= 0 ? path.Substring(slash + 1) : path;
+                t = FindDescendant(transform, leafName);
+            }
+            if (t == null) return;
+            var button = t.GetComponent<Button>();
+            if (button == null) return;
+            binder(button);
+        }
+
+        private void OnLoopChanged(bool value)
+        {
+            if (!_buildingUi) Document.Execute(d => d.editorSettings.loop = value);
+        }
+
+        private void OnSnapChanged(bool value)
+        {
+            if (!_buildingUi) Document.Execute(d => d.editorSettings.snapEnabled = value);
+        }
+
+        private static T FindComponent<T>(Transform root, string path) where T : Component
+        {
+            if (root == null) return null;
+            var t = string.IsNullOrEmpty(path) ? root : root.Find(path);
+            return t != null ? t.GetComponent<T>() : null;
+        }
+
+
+        private static Transform FindDescendant(Transform root, string exactName)
+        {
+            if (root == null) return null;
+            foreach (var child in root.GetComponentsInChildren<Transform>(true))
+            {
+                if (child != root && child.name == exactName) return child;
+            }
+            return null;
+        }
+
+        private static T FindDescendant<T>(Transform root, string exactName) where T : Component
+        {
+            var t = FindDescendant(root, exactName);
+            return t != null ? t.GetComponent<T>() : null;
+        }
+
+        private static T FindNthComponent<T>(Transform root, int oneBasedIndex) where T : Component
+        {
+            if (root == null) return null;
+            var components = root.GetComponentsInChildren<T>(true);
+            return oneBasedIndex > 0 && oneBasedIndex <= components.Length ? components[oneBasedIndex - 1] : null;
+        }
+
+
+#if UNITY_EDITOR
+        public void EditorSetUiPrefabCatalog(LightingScenarioUiPrefabCatalog catalog)
+        {
+            _uiPrefabs = catalog;
+            UnityEditor.EditorUtility.SetDirty(this);
+        }
+
+        public void EditorBuildCompleteUiHierarchy()
+        {
+            EnsureThemeComponent();
+
+            // The editor exposes a single deterministic build command. Remove every authored
+            // child under the application root and regenerate the entire default UI, including
+            // panel scripts, interaction helpers, and serialized references. Runtime widgets live in generated Prefab Assets.
+            for (var i = transform.childCount - 1; i >= 0; i--)
+            {
+                var child = transform.GetChild(i);
+                if (child != null) UnityEngine.Object.DestroyImmediate(child.gameObject);
+            }
+
+            ClearUiReferencesForEditorRebuild();
+            BuildUi();
+        }
+
+        private void ClearUiReferencesForEditorRebuild()
+        {
+            _overlay = null;
+            _preview = null;
+            _timeline = null;
+            _scenarioNameInput = null;
+            _durationInput = null;
+            _projectStateText = null;
+            _timeText = null;
+            _statusText = null;
+            _fullscreenButton = null;
+            _loopToggle = null;
+            _snapToggle = null;
+            _selectionInspectorContent = null;
+            _keyframeTimeInput = null;
+            _colorSwatchButton = null;
+            _colorSwatchImage = null;
+        }
+
+
+        private bool EnsureThemeComponent()
+        {
+            _theme ??= GetComponent<AppTheme>();
+            if (_theme != null)
+            {
+                AppTheme.SetActive(_theme);
+                return false;
+            }
+
+            _theme = gameObject.AddComponent<AppTheme>();
+            AppTheme.SetActive(_theme);
+            return true;
+        }
+
+
+#endif
+
+#if UNITY_EDITOR
         private void BuildUi()
         {
+            _theme ??= GetComponent<AppTheme>();
+            AppTheme.SetActive(_theme);
             _buildingUi = true;
             _canvas = GetComponent<Canvas>();
             _canvas.renderMode = RenderMode.ScreenSpaceOverlay;
@@ -114,64 +398,73 @@ namespace LightingScenarioTool
 
             var background = UiFactory.CreateUIObject("Background", transform);
             UiFactory.Stretch((RectTransform)background.transform);
-            UiFactory.AddImage(background, new Color(0.055f, 0.055f, 0.055f, 1f));
+            UiFactory.AddImage(background, AppTheme.Background);
 
-            const float menuHeight = 30f;
-            const float projectHeight = 38f;
-            const float toolbarHeight = 38f;
-            const float inspectorHeight = 40f;
-            const float gap = 1f;
+            const float menuHeight = 32f;
+            const float scenarioHeight = 72f;
+            const float toolbarHeight = 46f;
+            const float keyframeEditorHeight = 58f;
+            const float sectionGap = 0f;
             var y = 0f;
 
-            var menuBar = CreateTopBar("MenuBar", background.transform, y, menuHeight, new Color(0.075f, 0.075f, 0.075f, 1f));
+            var menuBar = CreateTopBar("MenuBar", background.transform, y, menuHeight, AppTheme.Panel);
             BuildMenuBar(menuBar.transform);
-            y += menuHeight + gap;
+            y += menuHeight + sectionGap;
 
-            var projectBar = CreateTopBar("ProjectScenarioBar", background.transform, y, projectHeight, new Color(0.095f, 0.095f, 0.095f, 1f));
-            BuildProjectScenarioBar(projectBar.transform);
-            y += projectHeight + gap;
+            var scenarioHeader = CreateTopBar("ScenarioHeader", background.transform, y, scenarioHeight, AppTheme.Panel);
+            BuildProjectScenarioBar(scenarioHeader.transform);
+            y += scenarioHeight + sectionGap;
 
-            var toolbar = CreateTopBar("TimelineToolbar", background.transform, y, toolbarHeight, new Color(0.085f, 0.085f, 0.085f, 1f));
+            var toolbar = CreateTopBar("TimelineToolbar", background.transform, y, toolbarHeight, AppTheme.Panel);
             BuildTimelineToolbar(toolbar.transform);
-            y += toolbarHeight + gap;
+            y += toolbarHeight + sectionGap;
 
-            var inspector = CreateTopBar("SelectionInspector", background.transform, y, inspectorHeight, new Color(0.10f, 0.10f, 0.10f, 1f));
-            BuildSelectionInspector(inspector.transform);
-            y += inspectorHeight + gap;
+            var keyframeEditor = CreateTopBar("KeyframeEditor", background.transform, y, keyframeEditorHeight, AppTheme.Panel);
+            BuildSelectionInspector(keyframeEditor.transform);
+            y += keyframeEditorHeight + sectionGap;
 
             var workspace = UiFactory.CreateUIObject("Workspace", background.transform);
             var workspaceRt = (RectTransform)workspace.transform;
             workspaceRt.anchorMin = Vector2.zero;
             workspaceRt.anchorMax = Vector2.one;
-            workspaceRt.offsetMin = new Vector2(8f, 8f);
-            workspaceRt.offsetMax = new Vector2(-8f, -y - 6f);
+            // Major application areas should meet the screen edge directly. Spacing belongs
+            // inside each area's content, not around the area itself.
+            workspaceRt.offsetMin = Vector2.zero;
+            workspaceRt.offsetMax = new Vector2(0f, -y);
+
             var workspaceLayout = workspace.AddComponent<HorizontalLayoutGroup>();
-            workspaceLayout.spacing = 8f;
+            workspaceLayout.spacing = 0f;
             workspaceLayout.childControlWidth = true;
             workspaceLayout.childControlHeight = true;
             workspaceLayout.childForceExpandWidth = true;
             workspaceLayout.childForceExpandHeight = true;
 
             var timelineGo = UiFactory.CreateUIObject("TimelineArea", workspace.transform);
-            UiFactory.AddImage(timelineGo, new Color(0.08f, 0.08f, 0.08f, 1f));
+            UiFactory.AddImage(timelineGo, AppTheme.Panel);
             var timelineLayout = timelineGo.AddComponent<LayoutElement>();
-            timelineLayout.minWidth = 420f;
-            timelineLayout.flexibleWidth = 2f;
+            timelineLayout.minWidth = 560f;
+            timelineLayout.flexibleWidth = 2.2f;
             _timeline = timelineGo.AddComponent<TimelinePanel>();
-            _timeline.Initialize(this);
+            _timeline.EditorBuildDefaultHierarchy(this);
+
+            var divider = UiFactory.CreateUIObject("PaneDivider", workspace.transform);
+            var dividerLayout = divider.AddComponent<LayoutElement>();
+            dividerLayout.minWidth = 1f;
+            dividerLayout.preferredWidth = 1f;
+            dividerLayout.flexibleWidth = 0f;
+            UiFactory.AddImage(divider, AppTheme.Divider).raycastTarget = false;
 
             var previewGo = UiFactory.CreateUIObject("PreviewArea", workspace.transform);
-            UiFactory.AddImage(previewGo, new Color(0.035f, 0.035f, 0.035f, 1f));
+            UiFactory.AddImage(previewGo, AppTheme.Panel);
             var previewLayout = previewGo.AddComponent<LayoutElement>();
-            previewLayout.minWidth = 320f;
+            previewLayout.minWidth = 440f;
             previewLayout.flexibleWidth = 1f;
             _preview = previewGo.AddComponent<PreviewPanel>();
-            _preview.Initialize(this);
+            _preview.EditorBuildDefaultHierarchy(this);
 
             var overlayGo = UiFactory.CreateUIObject("Overlay", transform);
             _overlay = (RectTransform)overlayGo.transform;
             UiFactory.Stretch(_overlay);
-            _popup = new RuntimePopup(_overlay);
             _buildingUi = false;
         }
 
@@ -185,109 +478,149 @@ namespace LightingScenarioTool
             rt.anchoredPosition = new Vector2(0f, -yFromTop);
             rt.sizeDelta = new Vector2(0f, height);
             UiFactory.AddImage(bar, color).raycastTarget = false;
+            CreateBottomDivider(bar.transform);
             return bar;
+        }
+
+        private static void CreateBottomDivider(Transform parent)
+        {
+            var line = UiFactory.CreateUIObject("BottomDivider", parent);
+            var rt = (RectTransform)line.transform;
+            rt.anchorMin = new Vector2(0f, 0f);
+            rt.anchorMax = new Vector2(1f, 0f);
+            rt.pivot = new Vector2(0.5f, 0f);
+            rt.anchoredPosition = Vector2.zero;
+            rt.sizeDelta = new Vector2(0f, 1f);
+            UiFactory.AddImage(line, AppTheme.Divider).raycastTarget = false;
         }
 
         private void BuildMenuBar(Transform parent)
         {
-            var row = UiFactory.CreateRow(parent, 30f);
+            var row = UiFactory.CreateRow(parent, 32f);
             UiFactory.Stretch(row);
             var layout = row.GetComponent<HorizontalLayoutGroup>();
-            layout.padding = new RectOffset(6, 6, 1, 1);
+            layout.padding = new RectOffset(8, 8, 0, 0);
             layout.spacing = 2f;
 
-            Button fileButton = null;
-            fileButton = UiFactory.CreateButton(row, "File", () => OpenFileMenu((RectTransform)fileButton.transform), 54f);
-            Button viewButton = null;
-            viewButton = UiFactory.CreateButton(row, "View", () => OpenViewMenu((RectTransform)viewButton.transform), 54f);
-            Button helpButton = null;
-            helpButton = UiFactory.CreateButton(row, "Help", () => OpenHelpMenu((RectTransform)helpButton.transform), 54f);
+            UiFactory.CreateButton(row, "File", null, 52f, AppButtonStyle.Menu);
+            UiFactory.CreateButton(row, "View", null, 52f, AppButtonStyle.Menu);
+            UiFactory.CreateButton(row, "Help", null, 52f, AppButtonStyle.Menu);
 
             var spacer = UiFactory.CreateUIObject("MenuSpacer", row);
             var spacerLayout = spacer.AddComponent<LayoutElement>();
             spacerLayout.flexibleWidth = 1f;
-            spacerLayout.minWidth = 8f;
+            spacerLayout.minWidth = AppTheme.SpacingL;
 
-            _statusText = UiFactory.CreateLabel(row, string.Empty, 320f);
-            var statusLayout = _statusText.GetComponent<LayoutElement>();
-            statusLayout.minWidth = 80f;
-            statusLayout.flexibleWidth = 1f;
-            _statusText.alignment = TextAlignmentOptions.Right;
-            _statusText.overflowMode = TextOverflowModes.Ellipsis;
+            _fullscreenButton = UiFactory.CreateButton(row, string.Empty, null, 92f, AppButtonStyle.Secondary);
+            _fullscreenButton.gameObject.name = "Button_Fullscreen";
+            UiFactory.CreateButton(row, "Exit", null, 58f, AppButtonStyle.Secondary);
+        }
 
-            UiFactory.CreateButton(row, "Exit", RequestExit, 58f);
+        private static Transform CreateHeaderGroup(Transform parent, string label, float width, bool flexible = false)
+        {
+            var group = UiFactory.CreateUIObject(label + "Group", parent);
+            var groupLayoutElement = group.AddComponent<LayoutElement>();
+            groupLayoutElement.preferredWidth = width;
+            groupLayoutElement.minWidth = Mathf.Min(width, 100f);
+            groupLayoutElement.flexibleWidth = flexible ? 1f : 0f;
+
+            var layout = group.AddComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(0, 0, 4, 4);
+            layout.spacing = 2f;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+
+            var title = UiFactory.CreateSecondaryLabel(group.transform, label, width);
+            var titleLayout = title.GetComponent<LayoutElement>();
+            titleLayout.preferredHeight = 18f;
+            titleLayout.minHeight = 18f;
+            return group.transform;
+        }
+
+        private static RectTransform CreateInlineRow(Transform parent, float height = AppTheme.ControlHeight)
+        {
+            var row = UiFactory.CreateRow(parent, height);
+            var layout = row.GetComponent<HorizontalLayoutGroup>();
+            layout.padding = new RectOffset(0, 0, 0, 0);
+            layout.spacing = AppTheme.SpacingS;
+            var element = row.GetComponent<LayoutElement>();
+            element.preferredHeight = height;
+            element.minHeight = height;
+            return row;
         }
 
         private void BuildProjectScenarioBar(Transform parent)
         {
-            var row = UiFactory.CreateRow(parent, 38f);
+            var row = UiFactory.CreateRow(parent, 72f);
             UiFactory.Stretch(row);
             var layout = row.GetComponent<HorizontalLayoutGroup>();
-            layout.padding = new RectOffset(8, 8, 3, 3);
-            layout.spacing = 6f;
+            layout.padding = new RectOffset(12, 12, 2, 2);
+            layout.spacing = AppTheme.SpacingL;
+            layout.childAlignment = TextAnchor.MiddleLeft;
 
-            UiFactory.CreateLabel(row, "Scenario", 62f);
-            _scenarioNameInput = UiFactory.CreateInput(row, "New Scenario", 190f);
-            _scenarioNameInput.onEndEdit.AddListener(SetScenarioName);
+            var scenarioGroup = CreateHeaderGroup(row, "Scenario", 310f);
+            _scenarioNameInput = UiFactory.CreateInput(scenarioGroup, "New Scenario", 310f);
 
-            UiFactory.CreateLabel(row, "Duration", 62f);
-            _durationInput = UiFactory.CreateInput(row, "10.000", 78f);
+            var durationGroup = CreateHeaderGroup(row, "Duration", 150f);
+            var durationRow = CreateInlineRow(durationGroup);
+            _durationInput = UiFactory.CreateInput(durationRow, "10.000", 105f);
             _durationInput.contentType = TMP_InputField.ContentType.DecimalNumber;
-            _durationInput.onEndEdit.AddListener(SetScenarioDuration);
-            UiFactory.CreateLabel(row, "s", 16f);
+            UiFactory.CreateSecondaryLabel(durationRow, "s", 20f);
 
-            UiFactory.CreateLabel(row, "Project", 52f);
-            _projectStateText = UiFactory.CreateLabel(row, "Untitled", 220f);
+            var projectGroup = CreateHeaderGroup(row, "Project", 300f, true);
+            _projectStateText = UiFactory.CreateLabel(projectGroup, "Untitled", 300f);
+            _projectStateText.gameObject.name = "ProjectStateText";
             var projectLayout = _projectStateText.GetComponent<LayoutElement>();
-            projectLayout.minWidth = 100f;
+            projectLayout.minWidth = 120f;
             projectLayout.flexibleWidth = 1f;
+            projectLayout.preferredHeight = 26f;
             _projectStateText.overflowMode = TextOverflowModes.Ellipsis;
+
+            _statusText = UiFactory.CreateSecondaryLabel(projectGroup, string.Empty, 300f);
+            _statusText.gameObject.name = "StatusText";
+            var statusLayout = _statusText.GetComponent<LayoutElement>();
+            statusLayout.preferredHeight = 16f;
+            statusLayout.minHeight = 16f;
+            statusLayout.flexibleWidth = 1f;
+            _statusText.overflowMode = TextOverflowModes.Ellipsis;
         }
 
         private void BuildTimelineToolbar(Transform parent)
         {
-            var row = UiFactory.CreateRow(parent, 38f);
+            var row = UiFactory.CreateRow(parent, 46f);
             UiFactory.Stretch(row);
             var layout = row.GetComponent<HorizontalLayoutGroup>();
-            layout.padding = new RectOffset(8, 8, 3, 3);
-            layout.spacing = 5f;
+            layout.padding = new RectOffset(12, 12, 7, 7);
+            layout.spacing = AppTheme.SpacingXs;
+            layout.childAlignment = TextAnchor.MiddleLeft;
 
-            UiFactory.CreateButton(row, "|<", JumpToStart, 42f);
-            UiFactory.CreateButton(row, "Play", Play, 58f);
-            UiFactory.CreateButton(row, "Pause", Pause, 62f);
-            UiFactory.CreateButton(row, "Stop", Stop, 58f);
-            UiFactory.CreateButton(row, ">|", JumpToEnd, 42f);
-            _timeText = UiFactory.CreateLabel(row, "0.000 / 10.000 s", 150f);
+            UiFactory.CreateButton(row, "|<", null, 34f, AppButtonStyle.Icon);
+            UiFactory.CreateButton(row, "Play", null, 58f, AppButtonStyle.Primary);
+            UiFactory.CreateButton(row, "Pause", null, 62f, AppButtonStyle.Secondary);
+            UiFactory.CreateButton(row, "Stop", null, 58f, AppButtonStyle.Secondary);
+            UiFactory.CreateButton(row, ">|", null, 34f, AppButtonStyle.Icon);
 
-            AddVerticalSeparator(row);
+            var transportGap = UiFactory.CreateUIObject("TransportGap", row);
+            transportGap.AddComponent<LayoutElement>().preferredWidth = AppTheme.SpacingM;
+
+            _timeText = UiFactory.CreateSecondaryLabel(row, "0.000 / 10.000 s", 150f);
+            _timeText.gameObject.name = "CurrentTimeText";
+            _timeText.alignment = TextAlignmentOptions.Center;
+
+            var optionGap = UiFactory.CreateUIObject("OptionGap", row);
+            optionGap.AddComponent<LayoutElement>().preferredWidth = AppTheme.SpacingL;
+
             _loopToggle = UiFactory.CreateToggle(row, "Loop", false);
-            _loopToggle.onValueChanged.AddListener(v =>
-            {
-                if (!_buildingUi) Document.Execute(d => d.editorSettings.loop = v);
-            });
             _snapToggle = UiFactory.CreateToggle(row, "Snap", true);
-            _snapToggle.onValueChanged.AddListener(v =>
-            {
-                if (!_buildingUi) Document.Execute(d => d.editorSettings.snapEnabled = v);
-            });
 
             var spacer = UiFactory.CreateUIObject("ToolbarSpacer", row);
             var spacerLayout = spacer.AddComponent<LayoutElement>();
             spacerLayout.flexibleWidth = 1f;
-            spacerLayout.minWidth = 8f;
-
-            UiFactory.CreateButton(row, "Zoom -", ZoomOut, 68f);
-            UiFactory.CreateButton(row, "Zoom +", ZoomIn, 68f);
+            spacerLayout.minWidth = AppTheme.SpacingL;
         }
 
-        private static void AddVerticalSeparator(Transform parent)
-        {
-            var go = UiFactory.CreateUIObject("Separator", parent);
-            var le = go.AddComponent<LayoutElement>();
-            le.preferredWidth = 1f;
-            le.preferredHeight = 24f;
-            UiFactory.AddImage(go, new Color(0.28f, 0.28f, 0.28f, 1f)).raycastTarget = false;
-        }
 
         private void BuildSelectionInspector(Transform parent)
         {
@@ -295,38 +628,42 @@ namespace LightingScenarioTool
             var rt = (RectTransform)_selectionInspectorContent.transform;
             UiFactory.Stretch(rt);
             var layout = _selectionInspectorContent.AddComponent<HorizontalLayoutGroup>();
-            layout.padding = new RectOffset(8, 8, 4, 4);
-            layout.spacing = 6f;
+            layout.padding = new RectOffset(12, 12, 10, 10);
+            layout.spacing = AppTheme.SpacingM;
             layout.childControlWidth = true;
             layout.childControlHeight = true;
             layout.childForceExpandWidth = false;
             layout.childForceExpandHeight = true;
+            layout.childAlignment = TextAnchor.MiddleLeft;
 
-            var title = UiFactory.CreateLabel(_selectionInspectorContent.transform, "Color Keyframe", 106f);
-            title.fontStyle = FontStyles.Bold;
-            UiFactory.CreateLabel(_selectionInspectorContent.transform, "Time", 34f);
-            _keyframeTimeInput = UiFactory.CreateInput(_selectionInspectorContent.transform, string.Empty, 78f);
+            UiFactory.CreateSectionTitle(_selectionInspectorContent.transform, "Keyframe", 86f);
+            UiFactory.CreateSecondaryLabel(_selectionInspectorContent.transform, "Time", 32f);
+            _keyframeTimeInput = UiFactory.CreateInput(_selectionInspectorContent.transform, string.Empty, 96f);
             _keyframeTimeInput.contentType = TMP_InputField.ContentType.DecimalNumber;
-            _keyframeTimeInput.onEndEdit.AddListener(SetSelectedColorKeyframeTimeFromText);
-            UiFactory.CreateLabel(_selectionInspectorContent.transform, "s", 16f);
-            UiFactory.CreateLabel(_selectionInspectorContent.transform, "Color", 38f);
+            UiFactory.CreateSecondaryLabel(_selectionInspectorContent.transform, "s", 16f);
 
+            var groupGap = UiFactory.CreateUIObject("ColorGap", _selectionInspectorContent.transform);
+            groupGap.AddComponent<LayoutElement>().preferredWidth = AppTheme.SpacingS;
+
+            UiFactory.CreateSecondaryLabel(_selectionInspectorContent.transform, "Color", 40f);
             var swatchGo = UiFactory.CreateUIObject("ColorSwatch", _selectionInspectorContent.transform);
             var swatchLayout = swatchGo.AddComponent<LayoutElement>();
-            swatchLayout.preferredWidth = 32f;
-            swatchLayout.preferredHeight = 28f;
+            swatchLayout.preferredWidth = 36f;
+            swatchLayout.preferredHeight = 32f;
             _colorSwatchImage = UiFactory.AddImage(swatchGo, Color.black);
             _colorSwatchButton = swatchGo.AddComponent<Button>();
             _colorSwatchButton.targetGraphic = _colorSwatchImage;
+            _colorSwatchButton.transition = Selectable.Transition.None;
             var outline = swatchGo.AddComponent<Outline>();
-            outline.effectColor = new Color(0.75f, 0.75f, 0.75f, 1f);
-            outline.effectDistance = new Vector2(1f, 1f);
-            _colorSwatchButton.onClick.AddListener(OpenHsvColorPicker);
-
+            outline.effectColor = AppTheme.Divider;
+            outline.effectDistance = new Vector2(1f, -1f);
             var spacer = UiFactory.CreateUIObject("InspectorSpacer", _selectionInspectorContent.transform);
             spacer.AddComponent<LayoutElement>().flexibleWidth = 1f;
-            _selectionInspectorContent.SetActive(false);
+            _keyframeTimeInput.interactable = false;
+            _colorSwatchButton.interactable = false;
         }
+
+#endif
 
         private void OpenFileMenu(RectTransform anchor)
         {
@@ -399,7 +736,7 @@ namespace LightingScenarioTool
 
         public void SetCurrentTime(float time)
         {
-            Document.Data.editorSettings.currentTime = Mathf.Clamp(time, 0f, Document.Data.metadata.duration);
+            Document.SetCurrentTimeTransient(time);
             RefreshTimeLabel();
             _timeline?.RefreshPlayhead();
             _preview?.RefreshColors();
@@ -410,11 +747,17 @@ namespace LightingScenarioTool
         public void SetPreviewLightSizeFromUi(float value)
         {
             if (_buildingUi) return;
-            var clamped = Mathf.Clamp(value, 20f, 120f);
-            Document.Data.editorSettings.previewLightSize = clamped;
+            var clamped = Mathf.Clamp(value, ScenarioDataUtility.MinPreviewLightSize, ScenarioDataUtility.MaxPreviewLightSize);
+            Document.SetPreviewLightSizeNoHistory(clamped);
             Document.MarkDirtyWithoutNotification();
             RefreshProjectStateDisplay();
             _preview?.RefreshLightSizes();
+        }
+
+        public void SetPreviewUnitNamesVisible(bool visible)
+        {
+            if (_buildingUi) return;
+            Document.Execute(d => d.editorSettings.hidePreviewUnitNames = !visible);
         }
 
         public void RefreshTimelineGeometry()
@@ -462,12 +805,7 @@ namespace LightingScenarioTool
             else if (!additive || SelectedColorKeyframeIds.Count == 0)
                 _primarySelectedColorKeyframeId = SelectedColorKeyframeIds.FirstOrDefault();
 
-            var selectedUnitIds = SelectedColorKeyframeIds
-                .Select(id => Document.FindUnitForColorKeyframe(id)?.unitId)
-                .Where(id => !string.IsNullOrEmpty(id))
-                .Distinct()
-                .ToList();
-            SelectedUnitId = selectedUnitIds.Count == 1 ? selectedUnitIds[0] : null;
+            UpdateSelectedUnitFromKeyframeSelection();
 
             _timeline?.RefreshSelection();
             _preview?.RefreshSelection();
@@ -500,10 +838,22 @@ namespace LightingScenarioTool
                 _primarySelectedColorKeyframeId = keyframeId;
             }
 
-            SelectedUnitId = unitId;
+            UpdateSelectedUnitFromKeyframeSelection();
             if (refreshTimeline) _timeline?.RefreshSelection();
             _preview?.RefreshSelection();
             RefreshInspector();
+        }
+
+        private void UpdateSelectedUnitFromKeyframeSelection()
+        {
+            var selectedUnitIds = SelectedColorKeyframeIds
+                .Select(id => Document.FindUnitForColorKeyframe(id)?.unitId)
+                .Where(id => !string.IsNullOrEmpty(id))
+                .Distinct(StringComparer.Ordinal)
+                .Take(2)
+                .ToList();
+
+            SelectedUnitId = selectedUnitIds.Count == 1 ? selectedUnitIds[0] : null;
         }
 
         public void CreateColorKeyframe(string unitId, float rawTime)
@@ -615,8 +965,8 @@ namespace LightingScenarioTool
         private void ChangeZoom(float factor) => Document.Execute(d =>
             d.editorSettings.pixelsPerSecond = Mathf.Clamp(
                 d.editorSettings.pixelsPerSecond * factor,
-                25f,
-                400f));
+                ScenarioDataUtility.MinPixelsPerSecond,
+                ScenarioDataUtility.MaxPixelsPerSecond));
 
         private void JumpToStart() => SetCurrentTime(0f);
         private void JumpToEnd() { _isPlaying = false; SetCurrentTime(Document.Data.metadata.duration); }
@@ -776,7 +1126,7 @@ namespace LightingScenarioTool
                 var resolved = _repository.ResolvePath(path);
                 _repository.Save(resolved, Document.Data);
                 Document.MarkSaved(resolved);
-                SetStatus("Saved: " + Path.GetFileName(resolved), false);
+                SetStatus("Project saved.", false);
                 return true;
             }
             catch (Exception ex)
@@ -798,7 +1148,7 @@ namespace LightingScenarioTool
                 _primarySelectedColorKeyframeId = null;
                 ClearClipboard();
                 Document.LoadDocument(data, resolved);
-                SetStatus("Loaded: " + Path.GetFileName(resolved), false);
+                SetStatus("Project opened.", false);
             }
             catch (Exception ex)
             {
@@ -827,6 +1177,23 @@ namespace LightingScenarioTool
             catch (Exception ex)
             {
                 SetStatus("Export failed: " + ex.Message, true);
+            }
+        }
+
+        private void ToggleFullscreenWindowMode()
+        {
+            var enterFullscreen = Screen.fullScreenMode == FullScreenMode.Windowed;
+            if (enterFullscreen)
+            {
+                _windowedWidth = Mathf.Max(640, Screen.width);
+                _windowedHeight = Mathf.Max(360, Screen.height);
+                Screen.SetResolution(Display.main.systemWidth, Display.main.systemHeight, FullScreenMode.FullScreenWindow);
+            }
+            else
+            {
+                var width = _windowedWidth > 0 ? _windowedWidth : 1280;
+                var height = _windowedHeight > 0 ? _windowedHeight : 720;
+                Screen.SetResolution(width, height, FullScreenMode.Windowed);
             }
         }
 
@@ -878,8 +1245,8 @@ namespace LightingScenarioTool
 
         private void RefreshProjectStateDisplay()
         {
-            if (_projectStateText != null)
-                _projectStateText.text = GetProjectDisplayName();
+            var displayName = GetProjectDisplayName();
+            if (_projectStateText != null) _projectStateText.text = displayName;
         }
 
         private static void QuitNow()
@@ -939,22 +1306,17 @@ namespace LightingScenarioTool
 
             var hasSelection = selectedKeys.Count > 0;
             _selectionInspectorContent.SetActive(hasSelection);
-            if (!hasSelection)
-            {
-                _buildingUi = false;
-                return;
-            }
-
-            var allEditable = selectedUnits.Count == selectedKeys.Count && selectedUnits.All(u => !u.track.locked);
+            var allEditable = hasSelection && selectedUnits.Count == selectedKeys.Count && selectedUnits.All(u => !u.track.locked);
             var single = selectedKeys.Count == 1 ? selectedKeys[0] : null;
+
             _keyframeTimeInput.interactable = single != null && allEditable;
             _keyframeTimeInput.SetTextWithoutNotify(single != null ? single.time.ToString("0.000") : string.Empty);
             _colorSwatchButton.interactable = allEditable;
 
-            if (AllSameColor(selectedKeys, out var commonColor))
+            if (hasSelection && AllSameColor(selectedKeys, out var commonColor))
                 _colorSwatchImage.color = commonColor;
             else
-                _colorSwatchImage.color = new Color(0.35f, 0.35f, 0.35f, 1f);
+                _colorSwatchImage.color = hasSelection ? new Color(0.35f, 0.35f, 0.37f, 1f) : new Color(0.18f, 0.18f, 0.19f, 1f);
 
             _buildingUi = false;
         }
@@ -1201,8 +1563,7 @@ namespace LightingScenarioTool
 
         private void PasteClipboardWithDelta(float delta, string operationName, string destinationUnitId)
         {
-            const float epsilon = 0.0001f;
-            var before = Document.CaptureState();
+            const float epsilon = ScenarioDataUtility.TimeEpsilon;
             var plans = new List<KeyValuePair<LightingUnitData, ColorKeyframeData>>();
             var plannedTimesByUnit = new Dictionary<string, List<float>>();
 
@@ -1260,16 +1621,17 @@ namespace LightingScenarioTool
                     }));
             }
 
-            foreach (var plan in plans)
-                plan.Key.track.colorKeyframes.Add(plan.Value);
-            foreach (var unit in plans.Select(x => x.Key).Distinct())
-                unit.track.colorKeyframes.Sort((a, b) => a.time.CompareTo(b.time));
-
-            Document.CommitExternalEdit(before);
+            Document.Execute(_ =>
+            {
+                foreach (var plan in plans)
+                    plan.Key.track.colorKeyframes.Add(plan.Value);
+                foreach (var unit in plans.Select(x => x.Key).Distinct())
+                    unit.track.colorKeyframes.Sort((a, b) => a.time.CompareTo(b.time));
+            });
             SelectedColorKeyframeIds.Clear();
             foreach (var plan in plans) SelectedColorKeyframeIds.Add(plan.Value.keyframeId);
             _primarySelectedColorKeyframeId = plans.Count > 0 ? plans[plans.Count - 1].Value.keyframeId : null;
-            if (plans.Count > 0) SelectedUnitId = plans[plans.Count - 1].Key.unitId;
+            UpdateSelectedUnitFromKeyframeSelection();
             _timeline?.RefreshSelection();
             _preview?.RefreshSelection();
             RefreshInspector();
@@ -1294,20 +1656,15 @@ namespace LightingScenarioTool
                 !SelectedColorKeyframeIds.Contains(_primarySelectedColorKeyframeId))
                 _primarySelectedColorKeyframeId = SelectedColorKeyframeIds.FirstOrDefault();
 
-            if (!string.IsNullOrEmpty(_primarySelectedColorKeyframeId))
-            {
-                var unit = Document.FindUnitForColorKeyframe(_primarySelectedColorKeyframeId);
-                if (unit != null) SelectedUnitId = unit.unitId;
-            }
+            if (SelectedColorKeyframeIds.Count > 0)
+                UpdateSelectedUnitFromKeyframeSelection();
         }
 
         private void SetStatus(string message, bool isError)
         {
             if (_statusText == null) return;
             _statusText.text = message ?? string.Empty;
-            _statusText.color = isError
-                ? new Color(1f, 0.45f, 0.4f, 1f)
-                : new Color(0.65f, 0.85f, 0.65f, 1f);
+            _statusText.color = isError ? AppTheme.Error : AppTheme.TextSecondary;
         }
     }
 }

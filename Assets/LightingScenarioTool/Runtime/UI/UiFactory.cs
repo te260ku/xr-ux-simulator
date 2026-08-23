@@ -1,7 +1,7 @@
+#if UNITY_EDITOR
 using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
-using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace LightingScenarioTool
@@ -25,149 +25,130 @@ namespace LightingScenarioTool
         public static TextMeshProUGUI AddText(
             GameObject go,
             string text,
-            int fontSize = 14,
+            int fontSize = AppTheme.BodySize,
             TextAnchor anchor = TextAnchor.MiddleLeft)
         {
-            if (go == null)
-                throw new System.ArgumentNullException(nameof(go));
-
-            // Unity UI allows only one Graphic-derived component on a GameObject.
-            // Image / RawImage / TextMeshProUGUI all derive from Graphic, so a label
-            // cannot be added directly to an object that already owns a background
-            // Image. In that case create a stretched child dedicated to the TMP text.
+            if (go == null) throw new System.ArgumentNullException(nameof(go));
             var textHost = GetOrCreateTextHost(go);
-
             var wasActiveSelf = textHost.activeSelf;
-            if (wasActiveSelf)
-                textHost.SetActive(false);
+            if (wasActiveSelf) textHost.SetActive(false);
 
             try
             {
                 if (textHost.GetComponent<CanvasRenderer>() == null)
                     textHost.AddComponent<CanvasRenderer>();
 
-                var label = textHost.GetComponent<TextMeshProUGUI>();
+                var label = textHost.GetComponent<TextMeshProUGUI>() ?? textHost.AddComponent<TextMeshProUGUI>();
                 if (label == null)
-                    label = textHost.AddComponent<TextMeshProUGUI>();
-
-                if (label == null)
-                    throw new System.InvalidOperationException(
-                        $"Failed to create TextMeshProUGUI on '{textHost.name}'.");
+                    throw new System.InvalidOperationException($"Failed to create TextMeshProUGUI on '{textHost.name}'.");
 
                 label.enableAutoSizing = false;
                 label.fontSize = Mathf.Round(fontSize);
-                label.color = new Color(0.94f, 0.94f, 0.94f, 1f);
+                label.color = AppTheme.TextPrimary;
                 label.alignment = ToTmpAlignment(anchor);
                 label.text = text ?? string.Empty;
                 label.enableWordWrapping = false;
                 label.overflowMode = TextOverflowModes.Truncate;
                 label.extraPadding = true;
-                // TMP uses SDF glyphs; keeping integer point sizes and refreshing geometry
-                // after configuration gives clean edges under CanvasScaler up-scaling.
                 label.ForceMeshUpdate(ignoreActiveState: true, forceTextReparsing: true);
                 return label;
             }
             finally
             {
-                if (wasActiveSelf)
-                    textHost.SetActive(true);
+                if (wasActiveSelf) textHost.SetActive(true);
             }
         }
 
         private static GameObject GetOrCreateTextHost(GameObject go)
         {
-            var existingTmp = go.GetComponent<TextMeshProUGUI>();
-            if (existingTmp != null)
-                return go;
-
-            // Any other Graphic (Image, RawImage, etc.) occupies the single Graphic
-            // slot on this GameObject. Put TMP on a child instead.
-            var existingGraphic = go.GetComponent<Graphic>();
-            if (existingGraphic == null)
-                return go;
+            if (go.GetComponent<TextMeshProUGUI>() != null) return go;
+            if (go.GetComponent<Graphic>() == null) return go;
 
             const string childName = "__TMPText";
             var childTransform = go.transform.Find(childName);
-            GameObject child;
-            if (childTransform != null)
-            {
-                child = childTransform.gameObject;
-            }
-            else
-            {
-                child = CreateUIObject(childName, go.transform);
-                var rt = (RectTransform)child.transform;
-                Stretch(rt);
-            }
+            if (childTransform != null) return childTransform.gameObject;
 
+            var child = CreateUIObject(childName, go.transform);
+            Stretch((RectTransform)child.transform);
             return child;
         }
 
-        public static Button CreateButton(Transform parent, string text, UnityAction onClick, float width = 72f)
+        public static Button CreateButton(
+            Transform parent,
+            string text,
+            UnityAction onClick,
+            float width = 72f,
+            AppButtonStyle style = AppButtonStyle.Secondary)
         {
             var go = CreateUIObject("Button_" + text, parent);
-            AddImage(go, new Color(0.22f, 0.22f, 0.22f, 1f));
+            var background = AddImage(go, AppTheme.ButtonColors(style).normalColor);
             var button = go.AddComponent<Button>();
+            button.targetGraphic = background;
+            button.transition = Selectable.Transition.ColorTint;
+            button.colors = AppTheme.ButtonColors(style);
             if (onClick != null) button.onClick.AddListener(onClick);
+
             var layout = go.AddComponent<LayoutElement>();
             layout.preferredWidth = width;
-            layout.preferredHeight = 30f;
+            layout.preferredHeight = style == AppButtonStyle.Icon ? AppTheme.SmallControlHeight : AppTheme.ControlHeight;
+            layout.minHeight = layout.preferredHeight;
 
             var textGo = CreateUIObject("Text", go.transform);
-            var rt = (RectTransform)textGo.transform;
-            Stretch(rt);
-            AddText(textGo, text, 13, TextAnchor.MiddleCenter).raycastTarget = false;
+            Stretch((RectTransform)textGo.transform);
+            var label = AddText(textGo, text, AppTheme.BodySize, TextAnchor.MiddleCenter);
+            label.raycastTarget = false;
+            if (style == AppButtonStyle.Primary) label.fontStyle = FontStyles.Bold;
             return button;
         }
 
         public static TMP_InputField CreateInput(Transform parent, string value, float width = 120f)
         {
-            // Build the complete TMP input hierarchy while inactive. TMP_InputField and its
-            // child TMP texts are then initialized together when the root is activated.
             var go = CreateUIObject("Input", parent);
             go.SetActive(false);
 
-            AddImage(go, new Color(0.13f, 0.13f, 0.13f, 1f));
+            var background = AddImage(go, AppTheme.InputBackground);
             var field = go.AddComponent<TMP_InputField>();
-            field.targetGraphic = go.GetComponent<Image>();
+            field.targetGraphic = background;
+            field.transition = Selectable.Transition.ColorTint;
+            field.colors = AppTheme.InputColors();
 
             var layout = go.AddComponent<LayoutElement>();
             layout.preferredWidth = width;
-            layout.preferredHeight = 30f;
+            layout.preferredHeight = AppTheme.ControlHeight;
+            layout.minHeight = AppTheme.ControlHeight;
+
+            var border = go.AddComponent<Outline>();
+            border.effectColor = AppTheme.Divider;
+            border.effectDistance = new Vector2(1f, -1f);
+            border.useGraphicAlpha = false;
 
             var viewportGo = CreateUIObject("Text Area", go.transform);
             var viewportRt = (RectTransform)viewportGo.transform;
             viewportRt.anchorMin = Vector2.zero;
             viewportRt.anchorMax = Vector2.one;
-            viewportRt.offsetMin = new Vector2(6f, 2f);
-            viewportRt.offsetMax = new Vector2(-6f, -2f);
+            viewportRt.offsetMin = new Vector2(8f, 3f);
+            viewportRt.offsetMax = new Vector2(-8f, -3f);
             viewportGo.AddComponent<RectMask2D>();
             field.textViewport = viewportRt;
 
             var placeholderGo = CreateUIObject("Placeholder", viewportGo.transform);
-            var placeholderRt = (RectTransform)placeholderGo.transform;
-            Stretch(placeholderRt);
-            var placeholder = AddText(placeholderGo, string.Empty, 13, TextAnchor.MiddleLeft);
-            placeholder.color = new Color(0.5f, 0.5f, 0.5f, 1f);
+            Stretch((RectTransform)placeholderGo.transform);
+            var placeholder = AddText(placeholderGo, string.Empty, AppTheme.BodySize, TextAnchor.MiddleLeft);
+            placeholder.color = AppTheme.TextDisabled;
             placeholder.raycastTarget = false;
 
             var textGo = CreateUIObject("Text", viewportGo.transform);
-            var textRt = (RectTransform)textGo.transform;
-            Stretch(textRt);
-            var text = AddText(textGo, value, 13, TextAnchor.MiddleLeft);
+            Stretch((RectTransform)textGo.transform);
+            var text = AddText(textGo, value, AppTheme.BodySize, TextAnchor.MiddleLeft);
             text.raycastTarget = false;
 
             field.textComponent = text;
             field.placeholder = placeholder;
-
-            // Activate only after all structural references are connected. From this point
-            // TMP_InputField / TextMeshProUGUI have completed Awake/OnEnable, so setters that
-            // rebuild the caret or label are safe to use.
             go.SetActive(true);
             field.customCaretColor = true;
-            field.caretColor = new Color(0.95f, 0.95f, 0.95f, 1f);
+            field.caretColor = AppTheme.TextPrimary;
             field.caretWidth = 2;
-            field.selectionColor = new Color(0.35f, 0.55f, 0.85f, 0.55f);
+            field.selectionColor = new Color(AppTheme.Accent.r, AppTheme.Accent.g, AppTheme.Accent.b, 0.45f);
             field.SetTextWithoutNotify(value ?? string.Empty);
             return field;
         }
@@ -182,27 +163,28 @@ namespace LightingScenarioTool
             var root = CreateUIObject("Slider", parent);
             var layout = root.AddComponent<LayoutElement>();
             layout.preferredWidth = width;
-            layout.preferredHeight = 22f;
+            layout.preferredHeight = AppTheme.ControlHeight;
+            layout.minHeight = AppTheme.ControlHeight;
 
             var backgroundGo = CreateUIObject("Background", root.transform);
             var backgroundRt = (RectTransform)backgroundGo.transform;
             backgroundRt.anchorMin = new Vector2(0f, 0.5f);
             backgroundRt.anchorMax = new Vector2(1f, 0.5f);
-            backgroundRt.offsetMin = new Vector2(0f, -3f);
-            backgroundRt.offsetMax = new Vector2(0f, 3f);
-            var background = AddImage(backgroundGo, new Color(0.16f, 0.16f, 0.16f, 1f));
+            backgroundRt.offsetMin = new Vector2(0f, -2f);
+            backgroundRt.offsetMax = new Vector2(0f, 2f);
+            var background = AddImage(backgroundGo, AppTheme.Divider);
             background.raycastTarget = false;
 
             var fillAreaGo = CreateUIObject("Fill Area", root.transform);
             var fillAreaRt = (RectTransform)fillAreaGo.transform;
             Stretch(fillAreaRt);
-            fillAreaRt.offsetMin = new Vector2(5f, 0f);
-            fillAreaRt.offsetMax = new Vector2(-5f, 0f);
+            fillAreaRt.offsetMin = new Vector2(7f, 0f);
+            fillAreaRt.offsetMax = new Vector2(-7f, 0f);
 
             var fillGo = CreateUIObject("Fill", fillAreaGo.transform);
             var fillRt = (RectTransform)fillGo.transform;
             Stretch(fillRt);
-            var fill = AddImage(fillGo, new Color(0.58f, 0.58f, 0.58f, 1f));
+            var fill = AddImage(fillGo, AppTheme.Accent);
             fill.raycastTarget = false;
 
             var handleAreaGo = CreateUIObject("Handle Slide Area", root.transform);
@@ -214,7 +196,7 @@ namespace LightingScenarioTool
             var handleGo = CreateUIObject("Handle", handleAreaGo.transform);
             var handleRt = (RectTransform)handleGo.transform;
             handleRt.sizeDelta = new Vector2(14f, 18f);
-            var handle = AddImage(handleGo, new Color(0.88f, 0.88f, 0.88f, 1f));
+            var handle = AddImage(handleGo, AppTheme.TextPrimary);
 
             var slider = root.AddComponent<Slider>();
             slider.minValue = minValue;
@@ -224,6 +206,16 @@ namespace LightingScenarioTool
             slider.handleRect = handleRt;
             slider.targetGraphic = handle;
             slider.direction = Slider.Direction.LeftToRight;
+            slider.colors = new ColorBlock
+            {
+                normalColor = Color.white,
+                highlightedColor = AppTheme.AccentHover,
+                pressedColor = AppTheme.AccentPressed,
+                selectedColor = AppTheme.AccentHover,
+                disabledColor = AppTheme.TextDisabled,
+                colorMultiplier = 1f,
+                fadeDuration = 0.08f
+            };
             slider.SetValueWithoutNotify(Mathf.Clamp(value, minValue, maxValue));
             return slider;
         }
@@ -232,8 +224,9 @@ namespace LightingScenarioTool
         {
             var root = CreateUIObject("Toggle_" + label, parent);
             var layout = root.AddComponent<LayoutElement>();
-            layout.preferredWidth = 80f;
-            layout.preferredHeight = 30f;
+            layout.preferredWidth = 82f;
+            layout.preferredHeight = AppTheme.ControlHeight;
+            layout.minHeight = AppTheme.ControlHeight;
 
             var box = CreateUIObject("Box", root.transform);
             var boxRt = (RectTransform)box.transform;
@@ -241,8 +234,8 @@ namespace LightingScenarioTool
             boxRt.anchorMax = new Vector2(0f, 0.5f);
             boxRt.pivot = new Vector2(0f, 0.5f);
             boxRt.anchoredPosition = new Vector2(2f, 0f);
-            boxRt.sizeDelta = new Vector2(20f, 20f);
-            AddImage(box, new Color(0.15f, 0.15f, 0.15f, 1f));
+            boxRt.sizeDelta = new Vector2(18f, 18f);
+            var boxImage = AddImage(box, AppTheme.InputBackground);
 
             var check = CreateUIObject("Checkmark", box.transform);
             var checkRt = (RectTransform)check.transform;
@@ -250,123 +243,58 @@ namespace LightingScenarioTool
             checkRt.anchorMax = new Vector2(0.8f, 0.8f);
             checkRt.offsetMin = Vector2.zero;
             checkRt.offsetMax = Vector2.zero;
-            var checkImage = AddImage(check, new Color(0.85f, 0.85f, 0.85f, 1f));
+            var checkImage = AddImage(check, AppTheme.Accent);
 
             var labelGo = CreateUIObject("Label", root.transform);
             var labelRt = (RectTransform)labelGo.transform;
-            labelRt.anchorMin = new Vector2(0f, 0f);
-            labelRt.anchorMax = new Vector2(1f, 1f);
+            labelRt.anchorMin = Vector2.zero;
+            labelRt.anchorMax = Vector2.one;
             labelRt.offsetMin = new Vector2(28f, 0f);
             labelRt.offsetMax = Vector2.zero;
-            AddText(labelGo, label, 13, TextAnchor.MiddleLeft).raycastTarget = false;
+            AddText(labelGo, label, AppTheme.BodySize, TextAnchor.MiddleLeft).raycastTarget = false;
 
             var toggle = root.AddComponent<Toggle>();
-            toggle.targetGraphic = box.GetComponent<Image>();
+            toggle.targetGraphic = boxImage;
             toggle.graphic = checkImage;
+            toggle.transition = Selectable.Transition.ColorTint;
+            toggle.colors = AppTheme.InputColors();
             toggle.isOn = value;
             return toggle;
         }
 
-        public static TMP_Dropdown CreateDropdown(Transform parent, float width = 100f)
-        {
-            // As with TMP_InputField, configure the whole hierarchy before TMP_Dropdown is
-            // activated. This avoids initialization-order dependent dirty/layout callbacks.
-            var root = CreateUIObject("Dropdown", parent);
-            root.SetActive(false);
-
-            AddImage(root, new Color(0.15f, 0.15f, 0.15f, 1f));
-            var layout = root.AddComponent<LayoutElement>();
-            layout.preferredWidth = width;
-            layout.preferredHeight = 30f;
-            var dropdown = root.AddComponent<TMP_Dropdown>();
-            dropdown.targetGraphic = root.GetComponent<Image>();
-
-            var labelGo = CreateUIObject("Label", root.transform);
-            var labelRt = (RectTransform)labelGo.transform;
-            Stretch(labelRt);
-            labelRt.offsetMin = new Vector2(6f, 0f);
-            labelRt.offsetMax = new Vector2(-20f, 0f);
-            var label = AddText(labelGo, string.Empty, 13, TextAnchor.MiddleLeft);
-            label.raycastTarget = false;
-            dropdown.captionText = label;
-
-            var arrowGo = CreateUIObject("Arrow", root.transform);
-            var arrowRt = (RectTransform)arrowGo.transform;
-            arrowRt.anchorMin = new Vector2(1f, 0.5f);
-            arrowRt.anchorMax = new Vector2(1f, 0.5f);
-            arrowRt.pivot = new Vector2(1f, 0.5f);
-            arrowRt.anchoredPosition = new Vector2(-5f, 0f);
-            arrowRt.sizeDelta = new Vector2(12f, 12f);
-            AddText(arrowGo, "▼", 10, TextAnchor.MiddleCenter).raycastTarget = false;
-
-            var template = CreateUIObject("Template", root.transform);
-            template.SetActive(false);
-            var templateRt = (RectTransform)template.transform;
-            templateRt.anchorMin = new Vector2(0f, 0f);
-            templateRt.anchorMax = new Vector2(1f, 0f);
-            templateRt.pivot = new Vector2(0.5f, 1f);
-            templateRt.anchoredPosition = new Vector2(0f, -2f);
-            templateRt.sizeDelta = new Vector2(0f, 64f);
-            AddImage(template, new Color(0.1f, 0.1f, 0.1f, 1f));
-            var scroll = template.AddComponent<ScrollRect>();
-
-            var viewport = CreateUIObject("Viewport", template.transform);
-            var viewportRt = (RectTransform)viewport.transform;
-            Stretch(viewportRt);
-            viewport.AddComponent<Mask>().showMaskGraphic = false;
-            AddImage(viewport, Color.white);
-
-            var content = CreateUIObject("Content", viewport.transform);
-            var contentRt = (RectTransform)content.transform;
-            contentRt.anchorMin = new Vector2(0f, 1f);
-            contentRt.anchorMax = new Vector2(1f, 1f);
-            contentRt.pivot = new Vector2(0.5f, 1f);
-            contentRt.sizeDelta = new Vector2(0f, 30f);
-
-            var item = CreateUIObject("Item", content.transform);
-            var itemRt = (RectTransform)item.transform;
-            itemRt.anchorMin = new Vector2(0f, 0.5f);
-            itemRt.anchorMax = new Vector2(1f, 0.5f);
-            itemRt.sizeDelta = new Vector2(0f, 30f);
-            var itemToggle = item.AddComponent<Toggle>();
-            var itemBg = AddImage(item, new Color(0.12f, 0.12f, 0.12f, 1f));
-            itemToggle.targetGraphic = itemBg;
-
-            var itemLabelGo = CreateUIObject("Item Label", item.transform);
-            var itemLabelRt = (RectTransform)itemLabelGo.transform;
-            Stretch(itemLabelRt);
-            itemLabelRt.offsetMin = new Vector2(6f, 0f);
-            var itemLabel = AddText(itemLabelGo, "Option", 13, TextAnchor.MiddleLeft);
-            itemLabel.raycastTarget = false;
-
-            dropdown.template = templateRt;
-            dropdown.itemText = itemLabel;
-            scroll.viewport = viewportRt;
-            scroll.content = contentRt;
-
-            root.SetActive(true);
-            return dropdown;
-        }
 
         public static TextMeshProUGUI CreateLabel(Transform parent, string value, float width = 90f)
         {
             var go = CreateUIObject("Label", parent);
             var layout = go.AddComponent<LayoutElement>();
             layout.preferredWidth = width;
-            layout.preferredHeight = 30f;
-            return AddText(go, value, 13, TextAnchor.MiddleLeft);
+            layout.preferredHeight = AppTheme.ControlHeight;
+            return AddText(go, value, AppTheme.BodySize, TextAnchor.MiddleLeft);
         }
 
-        public static RectTransform CreateRow(Transform parent, float height = 34f)
+        public static TextMeshProUGUI CreateSecondaryLabel(Transform parent, string value, float width = 90f)
+        {
+            var label = CreateLabel(parent, value, width);
+            label.fontSize = AppTheme.SecondarySize;
+            label.color = AppTheme.TextSecondary;
+            return label;
+        }
+
+        public static TextMeshProUGUI CreateSectionTitle(Transform parent, string value, float width = 120f)
+        {
+            var label = CreateLabel(parent, value, width);
+            label.fontSize = AppTheme.SectionTitleSize;
+            label.fontStyle = FontStyles.Bold;
+            label.color = AppTheme.TextPrimary;
+            return label;
+        }
+
+        public static RectTransform CreateRow(Transform parent, float height = 36f)
         {
             var go = CreateUIObject("Row", parent);
             var layout = go.AddComponent<HorizontalLayoutGroup>();
-            layout.spacing = 6f;
+            layout.spacing = AppTheme.SpacingS;
             layout.padding = new RectOffset(4, 4, 2, 2);
-            // Let the HorizontalLayoutGroup honor each child's LayoutElement width.
-            // With childControlWidth=false, newly-created RectTransforms keep their default
-            // ~100 px width and the preferredWidth values set by CreateLabel/CreateInput/
-            // CreateButton are ignored, causing long rows to overflow the 16:9 canvas.
             layout.childControlWidth = true;
             layout.childControlHeight = true;
             layout.childForceExpandWidth = false;
@@ -384,19 +312,7 @@ namespace LightingScenarioTool
             rt.offsetMax = Vector2.zero;
         }
 
-        public static void EnsureEventSystem()
-        {
-            if (Object.FindObjectOfType<EventSystem>() != null) return;
-            var go = new GameObject("EventSystem", typeof(EventSystem));
-#if ENABLE_INPUT_SYSTEM
-            go.AddComponent<UnityEngine.InputSystem.UI.InputSystemUIInputModule>();
-#else
-            go.AddComponent<StandaloneInputModule>();
-#endif
-            Object.DontDestroyOnLoad(go);
-        }
-
-        private static TextAlignmentOptions ToTmpAlignment(TextAnchor anchor)
+private static TextAlignmentOptions ToTmpAlignment(TextAnchor anchor)
         {
             switch (anchor)
             {
@@ -413,13 +329,5 @@ namespace LightingScenarioTool
             }
         }
     }
-    internal sealed class ConsumePointerClick : MonoBehaviour, IPointerClickHandler
-    {
-        public void OnPointerClick(PointerEventData eventData)
-        {
-            // Intentionally consume clicks so controls embedded in the Preview area do not
-            // bubble up to PreviewPanel's empty-area click handler.
-        }
-    }
-
 }
+#endif

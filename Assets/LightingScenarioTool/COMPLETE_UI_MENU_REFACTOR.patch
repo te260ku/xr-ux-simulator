@@ -1,0 +1,571 @@
+diff -ruN ls_orig/LightingScenarioTool_Refactored/COMPLETE_UI_MENU_REFACTOR.md ls_work/LightingScenarioTool_Refactored/COMPLETE_UI_MENU_REFACTOR.md
+--- ls_orig/LightingScenarioTool_Refactored/COMPLETE_UI_MENU_REFACTOR.md	1970-01-01 00:00:00.000000000 +0000
++++ ls_work/LightingScenarioTool_Refactored/COMPLETE_UI_MENU_REFACTOR.md	2026-08-22 14:46:05.179488497 +0000
+@@ -0,0 +1,41 @@
++# Complete UI Menu Refactor
++
++## Change
++
++`Tools > Lighting Scenario` now contains exactly one Lighting Scenario Tool authoring command:
++
++`Build Complete UI In Current Scene`
++
++The previous `Create Editable Demo Scene`, `Create Demo Scene`, `Build Editable UI In Current Scene`, and `Rebuild Editable UI In Current Scene` menu commands were removed.
++
++## Behavior
++
++The single command is intentionally deterministic and complete. In Edit Mode it:
++
++- creates `LightingScenarioApp` when missing;
++- attaches/ensures the required root components;
++- creates or repairs the scene `EventSystem` input module;
++- removes stale missing-script entries below the app root;
++- regenerates all generated children under `LightingScenarioApp`;
++- creates Timeline and Preview panels;
++- creates Timeline/Preview templates and required view scripts;
++- creates Timeline interaction helper components;
++- assigns the serialized UI references used at runtime;
++- marks the current scene dirty for saving.
++
++Running the command again replaces the generated UI beneath `LightingScenarioApp` with the default generated hierarchy. This replaces the old create/build/repair/rebuild decision tree with one setup operation.
++
++## Runtime guidance
++
++All runtime error/warning text that previously referenced removed menu commands now points to:
++
++`Tools > Lighting Scenario > Build Complete UI In Current Scene`
++
++## Validation performed outside Unity
++
++- verified exactly one `[MenuItem]` exists under the Lighting Scenario editor code;
++- verified no runtime/editor C# source references the removed menu commands;
++- checked C# brace and preprocessor directive balance;
++- checked ZIP integrity after packaging.
++
++Unity Editor compilation and Play Mode execution cannot be run in this environment.
+diff -ruN ls_orig/LightingScenarioTool_Refactored/COMPLETE_UI_MENU_REFACTOR.patch ls_work/LightingScenarioTool_Refactored/COMPLETE_UI_MENU_REFACTOR.patch
+--- ls_orig/LightingScenarioTool_Refactored/COMPLETE_UI_MENU_REFACTOR.patch	1970-01-01 00:00:00.000000000 +0000
++++ ls_work/LightingScenarioTool_Refactored/COMPLETE_UI_MENU_REFACTOR.patch	2026-08-22 14:46:32.627001497 +0000
+@@ -0,0 +1,45 @@
++diff -ruN ls_orig/LightingScenarioTool_Refactored/COMPLETE_UI_MENU_REFACTOR.md ls_work/LightingScenarioTool_Refactored/COMPLETE_UI_MENU_REFACTOR.md
++--- ls_orig/LightingScenarioTool_Refactored/COMPLETE_UI_MENU_REFACTOR.md	1970-01-01 00:00:00.000000000 +0000
+++++ ls_work/LightingScenarioTool_Refactored/COMPLETE_UI_MENU_REFACTOR.md	2026-08-22 14:46:05.179488497 +0000
++@@ -0,0 +1,41 @@
+++# Complete UI Menu Refactor
+++
+++## Change
+++
+++`Tools > Lighting Scenario` now contains exactly one Lighting Scenario Tool authoring command:
+++
+++`Build Complete UI In Current Scene`
+++
+++The previous `Create Editable Demo Scene`, `Create Demo Scene`, `Build Editable UI In Current Scene`, and `Rebuild Editable UI In Current Scene` menu commands were removed.
+++
+++## Behavior
+++
+++The single command is intentionally deterministic and complete. In Edit Mode it:
+++
+++- creates `LightingScenarioApp` when missing;
+++- attaches/ensures the required root components;
+++- creates or repairs the scene `EventSystem` input module;
+++- removes stale missing-script entries below the app root;
+++- regenerates all generated children under `LightingScenarioApp`;
+++- creates Timeline and Preview panels;
+++- creates Timeline/Preview templates and required view scripts;
+++- creates Timeline interaction helper components;
+++- assigns the serialized UI references used at runtime;
+++- marks the current scene dirty for saving.
+++
+++Running the command again replaces the generated UI beneath `LightingScenarioApp` with the default generated hierarchy. This replaces the old create/build/repair/rebuild decision tree with one setup operation.
+++
+++## Runtime guidance
+++
+++All runtime error/warning text that previously referenced removed menu commands now points to:
+++
+++`Tools > Lighting Scenario > Build Complete UI In Current Scene`
+++
+++## Validation performed outside Unity
+++
+++- verified exactly one `[MenuItem]` exists under the Lighting Scenario editor code;
+++- verified no runtime/editor C# source references the removed menu commands;
+++- checked C# brace and preprocessor directive balance;
+++- checked ZIP integrity after packaging.
+++
+++Unity Editor compilation and Play Mode execution cannot be run in this environment.
+diff -ruN ls_orig/LightingScenarioTool_Refactored/Editor/LightingScenarioSceneCreator.cs ls_work/LightingScenarioTool_Refactored/Editor/LightingScenarioSceneCreator.cs
+--- ls_orig/LightingScenarioTool_Refactored/Editor/LightingScenarioSceneCreator.cs	2026-08-22 14:16:18.000000000 +0000
++++ ls_work/LightingScenarioTool_Refactored/Editor/LightingScenarioSceneCreator.cs	2026-08-22 14:45:09.980449286 +0000
+@@ -1,5 +1,4 @@
+ #if UNITY_EDITOR
+-using System.IO;
+ using UnityEditor;
+ using UnityEditor.Build;
+ using UnityEditor.Build.Reporting;
+@@ -17,7 +16,7 @@
+     [InitializeOnLoad]
+     public static class LightingScenarioSceneCreator
+     {
+-        private const string ScenePath = "Assets/LightingScenarioTool/LightingScenarioDemo.unity";
++        private const string BuildMenuPath = "Tools/Lighting Scenario/Build Complete UI In Current Scene";
+ 
+         static LightingScenarioSceneCreator()
+         {
+@@ -25,76 +24,50 @@
+             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+         }
+ 
+-        [MenuItem("Tools/Lighting Scenario/Create Editable Demo Scene")]
+-        public static void CreateEditableDemoScene()
++        /// <summary>
++        /// The single authoring command for Lighting Scenario Tool UI.
++        /// It creates the application root when necessary and fully regenerates the default,
++        /// editable UI hierarchy including all required runtime components and templates.
++        /// </summary>
++        [MenuItem(BuildMenuPath)]
++        public static void BuildCompleteUiInCurrentScene()
+         {
+-            var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+-            var app = CreateAppRoot();
+-            EnsureEventSystem();
+-            app.EditorBuildUiHierarchy();
+-
+-            var directory = Path.GetDirectoryName(ScenePath);
+-            if (!Directory.Exists(directory)) Directory.CreateDirectory(directory);
+-            EditorSceneManager.MarkSceneDirty(scene);
+-            EditorSceneManager.SaveScene(scene, ScenePath);
+-            Selection.activeGameObject = app.gameObject;
+-            EditorGUIUtility.PingObject(AssetDatabase.LoadAssetAtPath<SceneAsset>(ScenePath));
+-            Debug.Log("Lighting Scenario editable demo scene created: " + ScenePath);
+-        }
+-
+-        // Backward-compatible menu name used by older revisions.
+-        [MenuItem("Tools/Lighting Scenario/Create Demo Scene")]
+-        public static void CreateDemoScene()
+-        {
+-            CreateEditableDemoScene();
+-        }
+-
+-        [MenuItem("Tools/Lighting Scenario/Build Editable UI In Current Scene")]
+-        public static void BuildEditableUiInCurrentScene()
+-        {
+-            var app = Object.FindFirstObjectByType<LightingScenarioApp>(FindObjectsInactive.Include);
+-            if (app == null) app = CreateAppRoot();
+-
+-            EnsureEventSystem();
+-            Undo.RegisterFullObjectHierarchyUndo(app.gameObject, "Build/Repair Lighting Scenario UI");
+-
+-            var removedMissingScripts = RemoveMissingScriptsRecursively(app.gameObject);
+-            var changed = removedMissingScripts > 0;
+-            changed |= app.EditorRepairUiHierarchy();
+-            EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
+-            Selection.activeGameObject = app.gameObject;
+-
+-            Debug.Log(changed
+-                ? "Editable Lighting Scenario UI hierarchy was built/repaired in the current scene. The application shell remains scene-authored; TimelinePanel and PreviewPanel also have runtime self-repair fallbacks for missing internal children/templates."
+-                : "Editable Lighting Scenario UI hierarchy is already valid. No rebuild was necessary.");
+-        }
++            if (EditorApplication.isPlayingOrWillChangePlaymode)
++            {
++                Debug.LogError("Build Complete UI In Current Scene can only be executed in Edit Mode.");
++                return;
++            }
+ 
+-        [MenuItem("Tools/Lighting Scenario/Rebuild Editable UI In Current Scene")]
+-        public static void RebuildEditableUiInCurrentScene()
+-        {
+             var app = Object.FindFirstObjectByType<LightingScenarioApp>(FindObjectsInactive.Include);
+             if (app == null)
+             {
+-                BuildEditableUiInCurrentScene();
+-                return;
++                RemoveStaleRootWithoutAppComponent();
++                app = CreateAppRoot();
++                Undo.RegisterCreatedObjectUndo(app.gameObject, "Create Lighting Scenario UI");
++            }
++            else
++            {
++                Undo.RegisterFullObjectHierarchyUndo(app.gameObject, "Build Complete Lighting Scenario UI");
++                EnsureRequiredRootComponents(app.gameObject);
+             }
+ 
+-            var replace = EditorUtility.DisplayDialog(
+-                "Lighting Scenario Tool",
+-                "This deletes the current editable UI design and recreates the default layout. Use Build Editable UI first when you only want to repair missing references/hierarchy.",
+-                "Rebuild",
+-                "Cancel");
+-            if (!replace) return;
+-
+-            Undo.RegisterFullObjectHierarchyUndo(app.gameObject, "Rebuild Lighting Scenario UI");
+-            DestroyNamedDirectChild(app.transform, "Background");
+-            DestroyNamedDirectChild(app.transform, "Overlay");
+-
++            RemoveMissingScriptsRecursively(app.gameObject);
+             EnsureEventSystem();
+-            app.EditorBuildUiHierarchy();
++
++            // This is intentionally a full regeneration rather than a repair operation.
++            // There is only one authoring command, so running it must always leave the scene
++            // with the same complete and executable default UI structure.
++            app.EditorBuildCompleteUiHierarchy();
++
++            EditorUtility.SetDirty(app);
+             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
+             Selection.activeGameObject = app.gameObject;
+-            Debug.Log("Editable Lighting Scenario UI hierarchy was rebuilt with the default layout.");
++
++            Debug.Log(
++                "Complete Lighting Scenario UI generated in the current scene. " +
++                "The command created/reused LightingScenarioApp, attached required components, " +
++                "generated Timeline/Preview templates and configured serialized references. " +
++                "Running the command again replaces the generated UI under LightingScenarioApp with the default layout.");
+         }
+ 
+         private static void OnPlayModeStateChanged(PlayModeStateChange state)
+@@ -113,12 +86,14 @@
+                 if (app == null || !app.gameObject.scene.IsValid()) continue;
+                 Undo.RegisterFullObjectHierarchyUndo(app.gameObject, "Auto Repair Lighting Scenario UI");
+ 
++                EnsureRequiredRootComponents(app.gameObject);
+                 var removedMissingScripts = RemoveMissingScriptsRecursively(app.gameObject);
+                 var changed = removedMissingScripts > 0;
+                 changed |= app.EditorRepairUiHierarchy();
+                 if (changed)
+                 {
+                     changedAny = true;
++                    EditorUtility.SetDirty(app);
+                     EditorSceneManager.MarkSceneDirty(app.gameObject.scene);
+                 }
+             }
+@@ -126,8 +101,8 @@
+             if (changedAny)
+             {
+                 Debug.Log(
+-                    "Lighting Scenario Tool repaired missing editable UI references/hierarchy before entering Play Mode. " +
+-                    "The repaired UI remains editable in the scene. TimelinePanel and PreviewPanel also contain runtime fallbacks for missing internal children/templates.");
++                    "Lighting Scenario Tool repaired missing UI references/hierarchy before entering Play Mode. " +
++                    "To intentionally regenerate the complete default UI, use " + BuildMenuPath + ".");
+             }
+         }
+ 
+@@ -150,10 +125,19 @@
+             return removed;
+         }
+ 
+-        private static void DestroyNamedDirectChild(Transform root, string name)
++        private static void RemoveStaleRootWithoutAppComponent()
+         {
+-            var child = root != null ? root.Find(name) : null;
+-            if (child != null) Object.DestroyImmediate(child.gameObject);
++            var scene = SceneManager.GetActiveScene();
++            if (!scene.IsValid()) return;
++
++            foreach (var root in scene.GetRootGameObjects())
++            {
++                if (root == null || root.name != "LightingScenarioApp") continue;
++                if (root.GetComponent<LightingScenarioApp>() != null) return;
++
++                Undo.DestroyObjectImmediate(root);
++                return;
++            }
+         }
+ 
+         private static LightingScenarioApp CreateAppRoot()
+@@ -167,34 +151,73 @@
+                 typeof(AppTheme),
+                 typeof(LightingScenarioApp));
+ 
++            ConfigureAppRoot(root);
++            return root.GetComponent<LightingScenarioApp>();
++        }
++
++        private static void EnsureRequiredRootComponents(GameObject root)
++        {
++            if (root == null) return;
++
++            EnsureComponent<Canvas>(root);
++            EnsureComponent<CanvasScaler>(root);
++            EnsureComponent<GraphicRaycaster>(root);
++            EnsureComponent<AppTheme>(root);
++            ConfigureAppRoot(root);
++        }
++
++        private static T EnsureComponent<T>(GameObject root) where T : Component
++        {
++            var component = root.GetComponent<T>();
++            return component != null ? component : Undo.AddComponent<T>(root);
++        }
++
++        private static void ConfigureAppRoot(GameObject root)
++        {
++            if (root == null) return;
++
+             var canvas = root.GetComponent<Canvas>();
+-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+-            canvas.pixelPerfect = true;
++            if (canvas != null)
++            {
++                canvas.renderMode = RenderMode.ScreenSpaceOverlay;
++                canvas.pixelPerfect = true;
++            }
+ 
+             var scaler = root.GetComponent<CanvasScaler>();
+-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+-            scaler.referenceResolution = new Vector2(1280f, 720f);
+-            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+-            scaler.matchWidthOrHeight = 0.5f;
+-
+-            var rt = root.GetComponent<RectTransform>();
+-            rt.anchorMin = Vector2.zero;
+-            rt.anchorMax = Vector2.one;
+-            rt.offsetMin = Vector2.zero;
+-            rt.offsetMax = Vector2.zero;
+-            return root.GetComponent<LightingScenarioApp>();
++            if (scaler != null)
++            {
++                scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
++                scaler.referenceResolution = new Vector2(1280f, 720f);
++                scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
++                scaler.matchWidthOrHeight = 0.5f;
++            }
++
++            if (root.transform is RectTransform rt)
++            {
++                rt.anchorMin = Vector2.zero;
++                rt.anchorMax = Vector2.one;
++                rt.offsetMin = Vector2.zero;
++                rt.offsetMax = Vector2.zero;
++            }
+         }
+ 
+         private static void EnsureEventSystem()
+         {
+-            if (Object.FindFirstObjectByType<EventSystem>(FindObjectsInactive.Include) != null) return;
+-            var go = new GameObject("EventSystem", typeof(EventSystem));
++            var eventSystem = Object.FindFirstObjectByType<EventSystem>(FindObjectsInactive.Include);
++            if (eventSystem == null)
++            {
++                var go = new GameObject("EventSystem", typeof(EventSystem));
++                Undo.RegisterCreatedObjectUndo(go, "Create EventSystem");
++                eventSystem = go.GetComponent<EventSystem>();
++            }
++
++            if (eventSystem.GetComponent<BaseInputModule>() != null) return;
++
+ #if ENABLE_INPUT_SYSTEM
+-            go.AddComponent<InputSystemUIInputModule>();
++            Undo.AddComponent<InputSystemUIInputModule>(eventSystem.gameObject);
+ #else
+-            go.AddComponent<StandaloneInputModule>();
++            Undo.AddComponent<StandaloneInputModule>(eventSystem.gameObject);
+ #endif
+-            Undo.RegisterCreatedObjectUndo(go, "Create EventSystem");
+         }
+     }
+ 
+diff -ruN ls_orig/LightingScenarioTool_Refactored/PREVIEW_HIERARCHY_FIX.md ls_work/LightingScenarioTool_Refactored/PREVIEW_HIERARCHY_FIX.md
+--- ls_orig/LightingScenarioTool_Refactored/PREVIEW_HIERARCHY_FIX.md	2026-08-22 14:08:24.000000000 +0000
++++ ls_work/LightingScenarioTool_Refactored/PREVIEW_HIERARCHY_FIX.md	2026-08-22 14:46:05.041551591 +0000
+@@ -28,7 +28,7 @@
+ 
+ For an existing scene with an incomplete Preview hierarchy:
+ 
+-1. In Edit Mode, `Tools > Lighting Scenario > Build Editable UI In Current Scene` repairs and persists missing Preview children.
++1. In Edit Mode, `Tools > Lighting Scenario > Build Complete UI In Current Scene` repairs and persists missing Preview children.
+ 2. If an incomplete scene still reaches Play Mode, `PreviewPanel` repairs the missing internal children automatically instead of disabling itself.
+ 3. The two target errors should no longer occur for repairable Preview hierarchy damage.
+ 
+diff -ruN ls_orig/LightingScenarioTool_Refactored/README.md ls_work/LightingScenarioTool_Refactored/README.md
+--- ls_orig/LightingScenarioTool_Refactored/README.md	2026-08-22 14:18:09.000000000 +0000
++++ ls_work/LightingScenarioTool_Refactored/README.md	2026-08-22 14:46:05.041304235 +0000
+@@ -144,24 +144,28 @@
+ 
+ ## Editable scene UI (current architecture)
+ 
+-The application shell is no longer created in `Awake()` / Play Mode.
+-It is authored as ordinary uGUI / TextMesh Pro objects in the Unity scene so its layout and visual design can be edited while the scene is not running.
++The application shell is authored as ordinary uGUI / TextMesh Pro objects in the Unity scene so its layout and visual design can be edited while the scene is not running.
+ 
+-### Existing scenes / hierarchy repair
++### Complete UI generation
+ 
+-1. Import this revision.
+-2. Open the scene that contains `LightingScenarioApp`.
+-3. Enter Play Mode once, or run **Tools > Lighting Scenario > Build Editable UI In Current Scene**.
+-4. Save the scene if Unity marks it dirty.
+-5. Edit the generated `Background` hierarchy directly in the Inspector / Scene / Hierarchy views.
++`Tools > Lighting Scenario` exposes **one authoring command only**:
+ 
+-Before Play Mode, the Editor automatically repairs missing Timeline/Preview chrome and templates in **Edit Mode**. The application shell remains scene-authored. In addition, `TimelinePanel` and `PreviewPanel` have narrow runtime self-repair fallbacks. `TimelinePanel` repairs only required timeline viewports/content, the scrollbar, and required template pieces; `PreviewPanel` repairs only missing Preview children (content, toolbar controls, layers, or the light template). Existing authored/customized UI is preserved wherever the missing element is not required for runtime behavior. The repaired Editor objects remain in the scene and are editable.
++**Tools > Lighting Scenario > Build Complete UI In Current Scene**
+ 
+-Persistent Timeline / Preview / application UI references are serialized on their components. After the references have been captured, moving or renaming those referenced GameObjects does not break initialization. Scenes produced by the previous revision are migrated by recursive name lookup when the serialized references are initially empty.
++Run this command in Edit Mode. It performs the complete setup in one operation:
+ 
+-**Tools > Lighting Scenario > Build Editable UI In Current Scene** is now non-destructive: it builds missing UI or repairs missing references/hierarchy. To intentionally discard your custom UI and restore the generated default, use **Tools > Lighting Scenario > Rebuild Editable UI In Current Scene**.
++1. Reuses the existing `LightingScenarioApp` root, or creates it when it does not exist.
++2. Ensures the root has `Canvas`, `CanvasScaler`, `GraphicRaycaster`, `AppTheme`, and `LightingScenarioApp`.
++3. Ensures the scene has an `EventSystem` and an appropriate UI input module.
++4. Removes stale missing-script entries below the application root.
++5. Replaces the generated children below `LightingScenarioApp` with the complete default UI hierarchy.
++6. Creates and attaches `TimelinePanel`, `PreviewPanel`, timeline interaction scripts, templates, and their required view components.
++7. Assigns the serialized references required by `LightingScenarioApp`, `TimelinePanel`, and `PreviewPanel`.
++8. Marks the current scene dirty so the generated UI can be saved normally.
+ 
+-For a clean scene, **Tools > Lighting Scenario > Create Editable Demo Scene** creates `Assets/LightingScenarioTool/LightingScenarioDemo.unity` with the complete editable hierarchy and an EventSystem.
++Running the command again intentionally regenerates the generated UI under `LightingScenarioApp`; it is not a partial repair command. This keeps setup deterministic and removes the previous distinction between Create / Build / Rebuild menu commands.
++
++Before entering Play Mode the editor still performs a narrow compatibility repair for older scenes. Timeline and Preview also retain runtime self-repair fallbacks for required internal chrome/templates, but normal scene setup should be performed with the single complete-build command above.
+ 
+ ### Hierarchy ownership
+ 
+@@ -198,8 +202,8 @@
+ `TrackLabelTemplate` is kept as visual template data only. Runtime click behavior is attached to each
+ instantiated track row and is not serialized on the template.
+ 
+-Before entering Play Mode, **Build Editable UI In Current Scene**, and player scene processing during a
+-build, the editor removes stale missing MonoBehaviour references below `LightingScenarioApp`. This keeps
++Before entering Play Mode, the editor compatibility repair and player scene processing during a
++build remove stale missing MonoBehaviour references below `LightingScenarioApp`. This keeps
+ older editable scenes usable without rebuilding the designer-authored UI.
+ 
+ 
+@@ -224,6 +228,6 @@
+ - Input State: Highlighted, Pressed, Selected, Disabled
+ - Semantic: Error, Warning, Success
+ 
+-Existing scenes receive the `AppTheme` component during the normal editable-UI repair that runs before Play Mode or through **Tools > Lighting Scenario > Build Editable UI In Current Scene**. New editable scenes include it from creation time.
++Existing scenes receive the `AppTheme` component during the normal editable-UI repair that runs before Play Mode or through **Tools > Lighting Scenario > Build Complete UI In Current Scene**. New editable scenes include it from creation time.
+ 
+ The spacing and typography constants remain code constants; this change moves the color system specifically into Inspector-editable serialized fields.
+diff -ruN ls_orig/LightingScenarioTool_Refactored/Runtime/UI/LightingScenarioApp.cs ls_work/LightingScenarioTool_Refactored/Runtime/UI/LightingScenarioApp.cs
+--- ls_orig/LightingScenarioTool_Refactored/Runtime/UI/LightingScenarioApp.cs	2026-08-22 13:46:56.000000000 +0000
++++ ls_work/LightingScenarioTool_Refactored/Runtime/UI/LightingScenarioApp.cs	2026-08-22 14:45:10.401482663 +0000
+@@ -83,7 +83,7 @@
+             AppTheme.SetActive(_theme);
+ 
+             if (EventSystem.current == null)
+-                Debug.LogError("Lighting Scenario Tool requires an EventSystem in the scene. Use Tools > Lighting Scenario > Build Editable UI In Current Scene.", this);
++                Debug.LogError("Lighting Scenario Tool requires an EventSystem in the scene. Use Tools > Lighting Scenario > Build Complete UI In Current Scene.", this);
+ 
+             if (Screen.fullScreenMode == FullScreenMode.Windowed)
+             {
+@@ -96,7 +96,7 @@
+             {
+                 Debug.LogError(
+                     "Lighting Scenario Tool UI hierarchy is missing. " +
+-                    "UI is no longer generated at runtime. Run Tools > Lighting Scenario > Build Editable UI In Current Scene once in the Editor.",
++                    "Run Tools > Lighting Scenario > Build Complete UI In Current Scene once in the Editor to generate the complete UI hierarchy.",
+                     this);
+                 enabled = false;
+                 return;
+@@ -320,14 +320,43 @@
+         }
+ 
+ #if UNITY_EDITOR
+-        public void EditorBuildUiHierarchy()
++        public void EditorBuildCompleteUiHierarchy()
+         {
+             EnsureThemeComponent();
+-            if (FindDescendant(transform, "Background") != null)
+-                throw new InvalidOperationException("Editable UI hierarchy already exists under LightingScenarioApp.");
++
++            // The editor exposes a single deterministic build command. Remove every authored
++            // child under the application root and regenerate the entire default UI, including
++            // panel scripts, interaction helpers, templates and serialized references.
++            for (var i = transform.childCount - 1; i >= 0; i--)
++            {
++                var child = transform.GetChild(i);
++                if (child != null) UnityEngine.Object.DestroyImmediate(child.gameObject);
++            }
++
++            ClearUiReferencesForEditorRebuild();
+             BuildUi();
+         }
+ 
++        private void ClearUiReferencesForEditorRebuild()
++        {
++            _overlay = null;
++            _preview = null;
++            _timeline = null;
++            _scenarioNameInput = null;
++            _durationInput = null;
++            _projectStateText = null;
++            _timeText = null;
++            _statusText = null;
++            _fullscreenButton = null;
++            _fullscreenButtonText = null;
++            _loopToggle = null;
++            _snapToggle = null;
++            _selectionInspectorContent = null;
++            _keyframeTimeInput = null;
++            _colorSwatchButton = null;
++            _colorSwatchImage = null;
++        }
++
+         public bool EditorRepairUiHierarchy()
+         {
+             var changed = EnsureThemeComponent();
+diff -ruN ls_orig/LightingScenarioTool_Refactored/Runtime/UI/PreviewPanel.cs ls_work/LightingScenarioTool_Refactored/Runtime/UI/PreviewPanel.cs
+--- ls_orig/LightingScenarioTool_Refactored/Runtime/UI/PreviewPanel.cs	2026-08-22 14:08:09.000000000 +0000
++++ ls_work/LightingScenarioTool_Refactored/Runtime/UI/PreviewPanel.cs	2026-08-22 14:45:10.402089552 +0000
+@@ -42,7 +42,7 @@
+             {
+                 Debug.LogError(
+                     "Preview UI hierarchy could not be repaired. " +
+-                    "Run Tools > Lighting Scenario > Rebuild Editable UI In Current Scene.", this);
++                    "Run Tools > Lighting Scenario > Build Complete UI In Current Scene.", this);
+                 enabled = false;
+                 return;
+             }
+@@ -52,8 +52,8 @@
+             {
+                 Debug.LogWarning(
+                     "Preview UI hierarchy was incomplete and has been repaired at runtime. " +
+-                    "To persist the repaired hierarchy in the scene, run Tools > Lighting Scenario > " +
+-                    "Build Editable UI In Current Scene while not in Play Mode.", this);
++                    "To regenerate and persist the complete default UI, run Tools > Lighting Scenario > " +
++                    "Build Complete UI In Current Scene while not in Play Mode.", this);
+             }
+ 
+             if (_lightSizeSlider != null)
+diff -ruN ls_orig/LightingScenarioTool_Refactored/Runtime/UI/TimelinePanel.cs ls_work/LightingScenarioTool_Refactored/Runtime/UI/TimelinePanel.cs
+--- ls_orig/LightingScenarioTool_Refactored/Runtime/UI/TimelinePanel.cs	2026-08-22 14:20:01.000000000 +0000
++++ ls_work/LightingScenarioTool_Refactored/Runtime/UI/TimelinePanel.cs	2026-08-22 14:45:10.401853602 +0000
+@@ -59,7 +59,7 @@
+             {
+                 Debug.LogError(
+                     "Timeline UI hierarchy could not be repaired. " +
+-                    "Run Tools > Lighting Scenario > Rebuild Editable UI In Current Scene.", this);
++                    "Run Tools > Lighting Scenario > Build Complete UI In Current Scene.", this);
+                 enabled = false;
+                 return;
+             }
+@@ -69,8 +69,8 @@
+             {
+                 Debug.LogWarning(
+                     "Timeline UI hierarchy was incomplete and has been repaired at runtime. " +
+-                    "To persist the repaired hierarchy in the scene, run Tools > Lighting Scenario > " +
+-                    "Build Editable UI In Current Scene while not in Play Mode.", this);
++                    "To regenerate and persist the complete default UI, run Tools > Lighting Scenario > " +
++                    "Build Complete UI In Current Scene while not in Play Mode.", this);
+             }
+ 
+             var wheel = gameObject.GetComponent<TimelineWheelInput>() ?? gameObject.AddComponent<TimelineWheelInput>();
+diff -ruN ls_orig/LightingScenarioTool_Refactored/TIMELINE_HIERARCHY_FIX.md ls_work/LightingScenarioTool_Refactored/TIMELINE_HIERARCHY_FIX.md
+--- ls_orig/LightingScenarioTool_Refactored/TIMELINE_HIERARCHY_FIX.md	2026-08-22 14:20:34.000000000 +0000
++++ ls_work/LightingScenarioTool_Refactored/TIMELINE_HIERARCHY_FIX.md	2026-08-22 14:46:05.041448859 +0000
+@@ -5,7 +5,7 @@
+ The following Play Mode initialization error was addressed:
+ 
+ ```text
+-Timeline UI hierarchy is missing. UI is no longer generated at runtime. Run Tools > Lighting Scenario > Build Editable UI In Current Scene.
++Timeline UI hierarchy is missing. UI is no longer generated at runtime. Run Tools > Lighting Scenario > Build Complete UI In Current Scene.
+ UnityEngine.Debug:LogError (object,UnityEngine.Object)
+ LightingScenarioTool.TimelinePanel:Initialize (...)
+ ```
+@@ -66,4 +66,4 @@
+ 
+ ## Not executed in this environment
+ 
+-Unity Editor is not available here, so Unity compilation and Play Mode execution were not run. After replacing the files, open the project and enter Play Mode. If runtime repair occurs, a warning is expected once; run **Tools > Lighting Scenario > Build Editable UI In Current Scene** outside Play Mode to persist the repaired hierarchy into the scene.
++Unity Editor is not available here, so Unity compilation and Play Mode execution were not run. After replacing the files, open the project and enter Play Mode. If runtime repair occurs, a warning is expected once; run **Tools > Lighting Scenario > Build Complete UI In Current Scene** outside Play Mode to persist the repaired hierarchy into the scene.

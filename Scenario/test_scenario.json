@@ -17,7 +17,7 @@
                 "colorKeyframes": [
                     {
                         "keyframeId": "bd9e2863362b41fcb6234e2274bdf7c9",
-                        "time": 1.6149483919143677,
+                        "time": 1.0,
                         "color": {
                             "r": 0.0,
                             "g": 0.0,
@@ -112,8 +112,8 @@
         "currentTime": 4.59999942779541,
         "loop": false,
         "snapEnabled": true,
-        "pixelsPerSecond": 80.00000762939453,
-        "previewLightSize": 33.80018997192383,
+        "pixelsPerSecond": 53.68709945678711,
+        "previewLightSize": 59.59136199951172,
         "previewBackgroundImagePath": "C:\\Users\\tetsuro\\xr-ux-simulator\\Assets\\Textures\\Background.png"
     }
 }

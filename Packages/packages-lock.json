@@ -7,6 +7,22 @@
       "dependencies": {},
       "url": "https://packages.unity.com"
     },
+    "com.cysharp.r3": {
+      "version": "https://github.com/Cysharp/R3.git?path=src/R3.Unity/Assets/R3.Unity",
+      "depth": 0,
+      "source": "git",
+      "dependencies": {
+        "com.unity.modules.imgui": "1.0.0"
+      },
+      "hash": "c6f8a932d9b8e771a9f405e6d72058a21ce0b457"
+    },
+    "com.github-glitchenzo.nugetforunity": {
+      "version": "https://github.com/GlitchEnzo/NuGetForUnity.git?path=/src/NuGetForUnity",
+      "depth": 0,
+      "source": "git",
+      "dependencies": {},
+      "hash": "acc1c7bc9ea34c33b830e40316fca52553878d29"
+    },
     "com.meta.xr.sdk.core": {
       "version": "201.0.0",
       "depth": 0,
@@ -408,6 +424,12 @@
       "source": "git",
       "dependencies": {},
       "hash": "5401e5a7ebc4980a2b82141ffc26391a6547edd7"
+    },
+    "nuget-packages": {
+      "version": "file:nuget-packages",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
     },
     "com.unity.modules.accessibility": {
       "version": "1.0.0",

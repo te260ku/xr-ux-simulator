@@ -1,0 +1,582 @@
+--- a/Runtime/UI/PreviewPanel.cs
++++ b/Runtime/UI/PreviewPanel.cs
+@@ -36,20 +36,24 @@
+         {
+             _app = app;
+             _root = (RectTransform)transform;
+-            if (!BindExistingChrome())
++
++            var chromeWasValid = BindExistingChrome();
++            if (!chromeWasValid && !EnsureChrome())
+             {
+-#if UNITY_EDITOR
+-                if (!Application.isPlaying)
+-                    BuildChrome();
+-                else
+-#endif
+-                {
+-                    Debug.LogError(
+-                        "Preview UI hierarchy is missing. UI is no longer generated at runtime. " +
+-                        "Run Tools > Lighting Scenario > Build Editable UI In Current Scene.", this);
+-                    enabled = false;
+-                    return;
+-                }
++                Debug.LogError(
++                    "Preview UI hierarchy could not be repaired. " +
++                    "Run Tools > Lighting Scenario > Rebuild Editable UI In Current Scene.", this);
++                enabled = false;
++                return;
++            }
++
++            enabled = true;
++            if (!chromeWasValid && Application.isPlaying)
++            {
++                Debug.LogWarning(
++                    "Preview UI hierarchy was incomplete and has been repaired at runtime. " +
++                    "To persist the repaired hierarchy in the scene, run Tools > Lighting Scenario > " +
++                    "Build Editable UI In Current Scene while not in Play Mode.", this);
+             }
+ 
+             if (_lightSizeSlider != null)
+@@ -123,15 +127,6 @@
+                 var value = FindDescendant(transform, "LightSizeValue");
+                 if (value != null) _lightSizeText = value.GetComponent<TMP_Text>();
+             }
+-            if (_lightSizeText == null)
+-            {
+-                var toolbar = FindDescendant(transform, "PreviewToolbar");
+-                if (toolbar != null)
+-                {
+-                    var labels = toolbar.GetComponentsInChildren<TMP_Text>(true);
+-                    if (labels.Length > 0) _lightSizeText = labels[labels.Length - 1];
+-                }
+-            }
+ 
+             if (_selectImageButton == null)
+             {
+@@ -151,7 +146,18 @@
+         private bool HasRequiredChrome()
+         {
+             return _contentRoot != null && _backgroundImage != null && _lightsLayer != null &&
+-                   _lightSizeSlider != null && _lightSizeText != null && _lightTemplate != null;
++                   _lightSizeSlider != null && _lightSizeText != null && _lightTemplate != null &&
++                   _lightTemplate.HasRequiredVisual();
++        }
++
++        private bool EnsureChrome()
++        {
++            if (BindExistingChrome())
++                return true;
++
++            BuildChrome();
++            BindExistingChrome();
++            return HasRequiredChrome();
+         }
+ 
+         private static Transform FindDescendant(Transform root, string exactName)
+@@ -175,21 +181,18 @@
+         {
+             _app = app;
+             _root = (RectTransform)transform;
+-            var hasChrome = BindExistingChrome();
++
++            var wasValid = BindExistingChrome();
+             var changed = EnsureEditorToolbarControls();
+-            if (hasChrome) return changed;
+ 
+-            // If an old scene contains only the PreviewPanel component, recreate its static
+-            // editable chrome in Edit Mode. Runtime still never generates this UI.
+-            if (transform.childCount == 0)
++            // Repair missing pieces individually. This preserves authored Preview objects and
++            // fixes partially missing hierarchies instead of only handling an entirely empty panel.
++            if (!wasValid)
+             {
+-                BuildChrome();
+-                return true;
++                EnsureChrome();
++                changed = true;
+             }
+ 
+-            // For a partially customized hierarchy we do not replace the designer's work.
+-            // Recursive binding above recovers moved objects; only genuinely deleted required
+-            // objects remain invalid and are reported by Initialize.
+             return changed;
+         }
+ 
+@@ -221,6 +224,27 @@
+ 
+         private void BuildChrome()
+         {
++            var hasExistingPreviewChrome = FindDescendant(transform, "PreviewToolbar") != null ||
++                                           FindDescendant(transform, "PreviewContent") != null ||
++                                           FindDescendant(transform, "PreviewTemplates") != null ||
++                                           FindDescendant(transform, "PreviewSectionHeader") != null;
++
++            // Only create the decorative section header for a completely empty/default panel.
++            // A partially authored/customized Preview should not regain optional chrome that a
++            // designer intentionally removed.
++            if (!hasExistingPreviewChrome)
++                EnsureSectionHeader();
++
++            EnsureToolbar();
++            EnsureContentHierarchy();
++            EnsureLightTemplate();
++        }
++
++        private void EnsureSectionHeader()
++        {
++            if (FindDescendant(transform, "PreviewSectionHeader") != null)
++                return;
++
+             var sectionHeader = UiFactory.CreateUIObject("PreviewSectionHeader", transform);
+             var sectionHeaderRt = (RectTransform)sectionHeader.transform;
+             sectionHeaderRt.anchorMin = new Vector2(0f, 1f);
+@@ -228,89 +252,223 @@
+             sectionHeaderRt.pivot = new Vector2(0.5f, 1f);
+             sectionHeaderRt.sizeDelta = new Vector2(0f, SectionHeaderHeight);
+             UiFactory.AddImage(sectionHeader, AppTheme.Panel).raycastTarget = false;
++
+             var title = UiFactory.CreateSectionTitle(sectionHeader.transform, "Preview", 120f);
+             var titleRt = (RectTransform)title.transform;
+             titleRt.anchorMin = Vector2.zero;
+             titleRt.anchorMax = Vector2.one;
+             titleRt.offsetMin = new Vector2(12f, 0f);
+             titleRt.offsetMax = new Vector2(-12f, 0f);
++        }
+ 
+-            var toolbar = UiFactory.CreateUIObject("PreviewToolbar", transform);
+-            var toolbarRt = (RectTransform)toolbar.transform;
+-            toolbarRt.anchorMin = new Vector2(0f, 1f);
+-            toolbarRt.anchorMax = new Vector2(1f, 1f);
+-            toolbarRt.pivot = new Vector2(0.5f, 1f);
+-            toolbarRt.anchoredPosition = new Vector2(0f, -SectionHeaderHeight);
+-            toolbarRt.sizeDelta = new Vector2(0f, ToolbarHeight);
+-            UiFactory.AddImage(toolbar, AppTheme.Elevated);
+-            var toolbarLayout = toolbar.AddComponent<HorizontalLayoutGroup>();
+-            toolbarLayout.padding = new RectOffset(12, 12, 10, 10);
+-            toolbarLayout.spacing = AppTheme.SpacingS;
+-            toolbarLayout.childControlWidth = true;
+-            toolbarLayout.childControlHeight = true;
+-            toolbarLayout.childForceExpandWidth = false;
+-            toolbarLayout.childForceExpandHeight = true;
+-            toolbarLayout.childAlignment = TextAnchor.MiddleLeft;
+-
+-            UiFactory.CreateSecondaryLabel(toolbar.transform, "Background", 72f);
+-            _selectImageButton = UiFactory.CreateButton(toolbar.transform, "Select Image", null, 94f, AppButtonStyle.Secondary);
+-
+-            var gap = UiFactory.CreateUIObject("ToolbarGap", toolbar.transform);
+-            gap.AddComponent<LayoutElement>().preferredWidth = AppTheme.SpacingS;
+-
+-            UiFactory.CreateSecondaryLabel(toolbar.transform, "Light Size", 60f);
+-            _lightSizeSlider = UiFactory.CreateSlider(
+-                toolbar.transform,
+-                ScenarioDataUtility.MinPreviewLightSize,
+-                ScenarioDataUtility.MaxPreviewLightSize,
+-                _app.PreviewLightSize,
+-                120f);
+-            _lightSizeSlider.gameObject.name = "LightSizeSlider";
+-            var sliderLayout = _lightSizeSlider.GetComponent<LayoutElement>();
+-            if (sliderLayout != null)
+-            {
+-                sliderLayout.minWidth = 90f;
+-                sliderLayout.flexibleWidth = 1f;
+-            }
+-            _lightSizeText = UiFactory.CreateSecondaryLabel(toolbar.transform, _app.PreviewLightSize.ToString("0"), 34f);
+-            _lightSizeText.gameObject.name = "LightSizeValue";
+-            _lightSizeText.alignment = TextAlignmentOptions.Right;
+-            _showUnitNamesToggle = UiFactory.CreateToggle(toolbar.transform, "Unit Names", true);
+-            _showUnitNamesToggle.gameObject.name = "Toggle_Unit Names";
++        private void EnsureToolbar()
++        {
++            var toolbar = FindDescendant(transform, "PreviewToolbar");
++            var createdToolbar = toolbar == null;
++            if (createdToolbar)
++            {
++                var toolbarGo = UiFactory.CreateUIObject("PreviewToolbar", transform);
++                toolbar = toolbarGo.transform;
++
++                var toolbarRt = (RectTransform)toolbar;
++                toolbarRt.anchorMin = new Vector2(0f, 1f);
++                toolbarRt.anchorMax = new Vector2(1f, 1f);
++                toolbarRt.pivot = new Vector2(0.5f, 1f);
++                var headerHeight = FindDescendant(transform, "PreviewSectionHeader") != null
++                    ? SectionHeaderHeight
++                    : 0f;
++                toolbarRt.anchoredPosition = new Vector2(0f, -headerHeight);
++                toolbarRt.sizeDelta = new Vector2(0f, ToolbarHeight);
++                UiFactory.AddImage(toolbarGo, AppTheme.Elevated);
++
++                var toolbarLayout = toolbarGo.AddComponent<HorizontalLayoutGroup>();
++                toolbarLayout.padding = new RectOffset(12, 12, 10, 10);
++                toolbarLayout.spacing = AppTheme.SpacingS;
++                toolbarLayout.childControlWidth = true;
++                toolbarLayout.childControlHeight = true;
++                toolbarLayout.childForceExpandWidth = false;
++                toolbarLayout.childForceExpandHeight = true;
++                toolbarLayout.childAlignment = TextAnchor.MiddleLeft;
++            }
++
++            if (_selectImageButton == null)
++            {
++                var selectImage = FindDescendant(toolbar, "Button_Select Image");
++                _selectImageButton = selectImage != null ? selectImage.GetComponent<Button>() : null;
++            }
++            if (_selectImageButton == null)
++            {
++                if (FindDescendant(toolbar, "BackgroundLabel") == null)
++                {
++                    var backgroundLabel = UiFactory.CreateSecondaryLabel(toolbar, "Background", 72f);
++                    backgroundLabel.gameObject.name = "BackgroundLabel";
++                }
++
++                _selectImageButton = UiFactory.CreateButton(
++                    toolbar,
++                    "Select Image",
++                    null,
++                    94f,
++                    AppButtonStyle.Secondary);
++            }
++
++            if (createdToolbar && FindDescendant(toolbar, "ToolbarGap") == null)
++            {
++                var gap = UiFactory.CreateUIObject("ToolbarGap", toolbar);
++                gap.AddComponent<LayoutElement>().preferredWidth = AppTheme.SpacingS;
++            }
++
++            if (_lightSizeSlider == null)
++            {
++                var slider = FindDescendant(toolbar, "LightSizeSlider");
++                slider ??= FindDescendant(toolbar, "Slider");
++                _lightSizeSlider = slider != null ? slider.GetComponent<Slider>() : null;
++            }
++            if (_lightSizeSlider == null)
++            {
++                if (FindDescendant(toolbar, "LightSizeLabel") == null)
++                {
++                    var sizeLabel = UiFactory.CreateSecondaryLabel(toolbar, "Light Size", 60f);
++                    sizeLabel.gameObject.name = "LightSizeLabel";
++                }
++
++                _lightSizeSlider = UiFactory.CreateSlider(
++                    toolbar,
++                    ScenarioDataUtility.MinPreviewLightSize,
++                    ScenarioDataUtility.MaxPreviewLightSize,
++                    _app != null ? _app.PreviewLightSize : ScenarioDataUtility.DefaultPreviewLightSize,
++                    120f);
++                _lightSizeSlider.gameObject.name = "LightSizeSlider";
++
++                var sliderLayout = _lightSizeSlider.GetComponent<LayoutElement>();
++                if (sliderLayout != null)
++                {
++                    sliderLayout.minWidth = 90f;
++                    sliderLayout.flexibleWidth = 1f;
++                }
++            }
++
++            if (_lightSizeText == null)
++            {
++                var value = FindDescendant(toolbar, "LightSizeValue");
++                _lightSizeText = value != null ? value.GetComponent<TMP_Text>() : null;
++            }
++            if (_lightSizeText == null)
++            {
++                var initialSize = _app != null
++                    ? _app.PreviewLightSize
++                    : ScenarioDataUtility.DefaultPreviewLightSize;
++                _lightSizeText = UiFactory.CreateSecondaryLabel(toolbar, initialSize.ToString("0"), 34f);
++                _lightSizeText.gameObject.name = "LightSizeValue";
++                _lightSizeText.alignment = TextAlignmentOptions.Right;
++            }
++
++            if (_showUnitNamesToggle == null)
++            {
++                var names = FindDescendant(toolbar, "Toggle_Unit Names");
++                _showUnitNamesToggle = names != null ? names.GetComponent<Toggle>() : null;
++            }
++            if (_showUnitNamesToggle == null)
++            {
++                _showUnitNamesToggle = UiFactory.CreateToggle(toolbar, "Unit Names", true);
++                _showUnitNamesToggle.gameObject.name = "Toggle_Unit Names";
++            }
++        }
++
++        private void EnsureContentHierarchy()
++        {
++            if (_contentRoot == null)
++            {
++                _contentRoot = FindDescendant<RectTransform>(transform, "PreviewContent");
++            }
++
++            if (_contentRoot == null)
++            {
++                var contentGo = UiFactory.CreateUIObject("PreviewContent", transform);
++                _contentRoot = (RectTransform)contentGo.transform;
++                _contentRoot.anchorMin = Vector2.zero;
++                _contentRoot.anchorMax = Vector2.one;
++                _contentRoot.offsetMin = Vector2.zero;
++                var headerHeight = FindDescendant(transform, "PreviewSectionHeader") != null
++                    ? SectionHeaderHeight
++                    : 0f;
++                _contentRoot.offsetMax = new Vector2(0f, -(headerHeight + ToolbarHeight));
++                UiFactory.AddImage(contentGo, AppTheme.PreviewCanvas).raycastTarget = true;
++            }
++
++            if (_backgroundImage == null)
++            {
++                var background = FindDescendant(_contentRoot, "PreviewBackgroundImage");
++                if (background != null)
++                    _backgroundImage = background.GetComponent<Image>() ?? UiFactory.AddImage(background.gameObject, Color.white);
++            }
++            if (_backgroundImage == null)
++            {
++                var backgroundGo = UiFactory.CreateUIObject("PreviewBackgroundImage", _contentRoot);
++                var backgroundRt = (RectTransform)backgroundGo.transform;
++                UiFactory.Stretch(backgroundRt);
++                _backgroundImage = UiFactory.AddImage(backgroundGo, Color.white);
++            }
++
++            if (_backgroundImage != null)
++            {
++                _backgroundImage.raycastTarget = false;
++                _backgroundImage.preserveAspect = true;
++                _backgroundImage.type = Image.Type.Simple;
++                if (_backgroundImage.sprite == null)
++                    _backgroundImage.enabled = false;
++            }
++
++            if (_lightsLayer == null)
++            {
++                _lightsLayer = FindDescendant<RectTransform>(_contentRoot, "LightsLayer");
++            }
++            if (_lightsLayer == null)
++            {
++                var lightsGo = UiFactory.CreateUIObject("LightsLayer", _contentRoot);
++                _lightsLayer = (RectTransform)lightsGo.transform;
++                UiFactory.Stretch(_lightsLayer);
++            }
++        }
++
++        private void EnsureLightTemplate()
++        {
++            if (_lightTemplate == null)
++            {
++                var template = FindDescendant(transform, "PreviewLightTemplate");
++                if (template != null)
++                    _lightTemplate = template.GetComponent<PreviewLightView>() ?? template.gameObject.AddComponent<PreviewLightView>();
++            }
++
++            if (_lightTemplate == null)
++            {
++                var templates = FindDescendant(transform, "PreviewTemplates");
++                if (templates == null)
++                {
++                    var templatesGo = UiFactory.CreateUIObject("PreviewTemplates", transform);
++                    templates = templatesGo.transform;
++                    templatesGo.SetActive(false);
++                }
++
++                var templateGo = UiFactory.CreateUIObject("PreviewLightTemplate", templates);
++                _lightTemplate = templateGo.AddComponent<PreviewLightView>();
++            }
+ 
+-            var contentGo = UiFactory.CreateUIObject("PreviewContent", transform);
+-            _contentRoot = (RectTransform)contentGo.transform;
+-            _contentRoot.anchorMin = Vector2.zero;
+-            _contentRoot.anchorMax = Vector2.one;
+-            _contentRoot.offsetMin = Vector2.zero;
+-            _contentRoot.offsetMax = new Vector2(0f, -(SectionHeaderHeight + ToolbarHeight));
+-            UiFactory.AddImage(contentGo, AppTheme.PreviewCanvas).raycastTarget = true;
+-
+-            var backgroundGo = UiFactory.CreateUIObject("PreviewBackgroundImage", _contentRoot);
+-            var backgroundRt = (RectTransform)backgroundGo.transform;
+-            UiFactory.Stretch(backgroundRt);
+-            _backgroundImage = UiFactory.AddImage(backgroundGo, Color.white);
+-            _backgroundImage.raycastTarget = false;
+-            _backgroundImage.preserveAspect = true;
+-            _backgroundImage.type = Image.Type.Simple;
+-            _backgroundImage.enabled = false;
+-
+-            var lightsGo = UiFactory.CreateUIObject("LightsLayer", _contentRoot);
+-            _lightsLayer = (RectTransform)lightsGo.transform;
+-            UiFactory.Stretch(_lightsLayer);
+-
+-            var templates = UiFactory.CreateUIObject("PreviewTemplates", transform);
+-            templates.SetActive(false);
+-            var templateGo = UiFactory.CreateUIObject("PreviewLightTemplate", templates.transform);
+-            _lightTemplate = templateGo.AddComponent<PreviewLightView>();
+-            _lightTemplate.EditorBuildVisual();
++            if (!_lightTemplate.HasRequiredVisual())
++                _lightTemplate.EnsureVisual();
++
++            if (_lightTemplate.transform.parent != null &&
++                _lightTemplate.transform.parent.name == "PreviewTemplates")
++            {
++                _lightTemplate.transform.parent.gameObject.SetActive(false);
++            }
+         }
+ 
+         public void Rebuild()
+         {
+-            if (_lightsLayer == null || _lightTemplate == null)
++            if ((_lightsLayer == null || _lightTemplate == null || !HasRequiredChrome()) && !EnsureChrome())
+             {
+-                Debug.LogError("Preview hierarchy/templates are not configured.", this);
++                Debug.LogError("Preview hierarchy/templates could not be configured.", this);
+                 return;
+             }
+ 
+@@ -511,13 +669,14 @@
+         {
+             _app = app;
+             _unitId = unitId;
+-            BindVisualReferences();
+-            if (_rt == null || _image == null || _outline == null || _label == null || _labelBackgroundRt == null)
++            if (!HasRequiredVisual() && !EnsureVisual())
+             {
+-                Debug.LogError("PreviewLightTemplate is incomplete. Edit the PreviewTemplates/PreviewLightTemplate object in the scene.", this);
++                Debug.LogError("Preview light visual could not be repaired.", this);
+                 enabled = false;
+                 return;
+             }
++
++            enabled = true;
+             RefreshSize();
+             RefreshPosition();
+             RefreshName();
+@@ -533,35 +692,83 @@
+             if (_label == null && labelBg != null) _label = labelBg.GetComponentInChildren<TMP_Text>(true);
+         }
+ 
+-        public void EditorBuildVisual()
++        public bool HasRequiredVisual()
++        {
++            BindVisualReferences();
++            return _rt != null && _image != null && _outline != null &&
++                   _label != null && _labelBackgroundRt != null;
++        }
++
++        public bool EnsureVisual()
+         {
+-            _rt = (RectTransform)transform;
++            BindVisualReferences();
++
++            _rt ??= (RectTransform)transform;
+             _rt.anchorMin = _rt.anchorMax = new Vector2(0.5f, 0.5f);
+             _rt.pivot = new Vector2(0.5f, 0.5f);
+-            _rt.sizeDelta = new Vector2(54f, 54f);
+-            _image = UiFactory.AddImage(gameObject, Color.black);
+-            _outline = gameObject.GetComponent<Outline>() ?? gameObject.AddComponent<Outline>();
++            if (_rt.sizeDelta.x <= 0f || _rt.sizeDelta.y <= 0f)
++                _rt.sizeDelta = new Vector2(54f, 54f);
++
++            _image ??= UiFactory.AddImage(gameObject, Color.black);
++            _outline ??= gameObject.GetComponent<Outline>() ?? gameObject.AddComponent<Outline>();
+             _outline.effectColor = AppTheme.Accent;
+             _outline.effectDistance = new Vector2(2f, 2f);
+             _outline.enabled = false;
+ 
+-            var labelBgGo = UiFactory.CreateUIObject("LabelBackground", transform);
+-            _labelBackgroundRt = (RectTransform)labelBgGo.transform;
+-            _labelBackgroundRt.anchorMin = _labelBackgroundRt.anchorMax = new Vector2(0.5f, 1f);
+-            _labelBackgroundRt.pivot = new Vector2(0.5f, 0f);
+-            _labelBackgroundRt.anchoredPosition = new Vector2(0f, 5f);
+-            _labelBackgroundRt.sizeDelta = new Vector2(112f, 22f);
+-            UiFactory.AddImage(labelBgGo, new Color(0.06f, 0.06f, 0.07f, 0.78f)).raycastTarget = false;
+-
+-            var labelGo = UiFactory.CreateUIObject("Label", labelBgGo.transform);
+-            var labelRt = (RectTransform)labelGo.transform;
+-            UiFactory.Stretch(labelRt);
+-            labelRt.offsetMin = new Vector2(6f, 2f);
+-            labelRt.offsetMax = new Vector2(-6f, -2f);
+-            _label = UiFactory.AddText(labelGo, "Light", AppTheme.SecondarySize, TextAnchor.MiddleCenter);
+-            _label.color = AppTheme.TextPrimary;
+-            _label.raycastTarget = false;
+-            _label.overflowMode = TextOverflowModes.Ellipsis;
++            if (_labelBackgroundRt == null)
++            {
++                var existingLabelBg = transform.Find("LabelBackground");
++                _labelBackgroundRt = existingLabelBg as RectTransform;
++            }
++
++            if (_labelBackgroundRt == null)
++            {
++                var labelBgGo = UiFactory.CreateUIObject("LabelBackground", transform);
++                _labelBackgroundRt = (RectTransform)labelBgGo.transform;
++                _labelBackgroundRt.anchorMin = _labelBackgroundRt.anchorMax = new Vector2(0.5f, 1f);
++                _labelBackgroundRt.pivot = new Vector2(0.5f, 0f);
++                _labelBackgroundRt.anchoredPosition = new Vector2(0f, 5f);
++                _labelBackgroundRt.sizeDelta = new Vector2(112f, 22f);
++                UiFactory.AddImage(labelBgGo, new Color(0.06f, 0.06f, 0.07f, 0.78f)).raycastTarget = false;
++            }
++            else
++            {
++                var labelBgImage = _labelBackgroundRt.GetComponent<Image>();
++                if (labelBgImage == null)
++                    UiFactory.AddImage(_labelBackgroundRt.gameObject, new Color(0.06f, 0.06f, 0.07f, 0.78f)).raycastTarget = false;
++            }
++
++            if (_label == null)
++                _label = _labelBackgroundRt.GetComponentInChildren<TMP_Text>(true);
++
++            if (_label == null)
++            {
++                var labelTransform = _labelBackgroundRt.Find("Label");
++                var labelGo = labelTransform != null
++                    ? labelTransform.gameObject
++                    : UiFactory.CreateUIObject("Label", _labelBackgroundRt);
++
++                var labelRt = (RectTransform)labelGo.transform;
++                UiFactory.Stretch(labelRt);
++                labelRt.offsetMin = new Vector2(6f, 2f);
++                labelRt.offsetMax = new Vector2(-6f, -2f);
++                _label = UiFactory.AddText(labelGo, "Light", AppTheme.SecondarySize, TextAnchor.MiddleCenter);
++            }
++
++            if (_label != null)
++            {
++                _label.color = AppTheme.TextPrimary;
++                _label.raycastTarget = false;
++                _label.overflowMode = TextOverflowModes.Ellipsis;
++            }
++
++            BindVisualReferences();
++            return HasRequiredVisual();
++        }
++
++        public void EditorBuildVisual()
++        {
++            EnsureVisual();
+         }
+ 
+         public void RefreshSize()
+--- a/Editor/LightingScenarioSceneCreator.cs
++++ b/Editor/LightingScenarioSceneCreator.cs
+@@ -65,7 +65,7 @@
+             Selection.activeGameObject = app.gameObject;
+ 
+             Debug.Log(changed
+-                ? "Editable Lighting Scenario UI hierarchy was built/repaired in the current scene. Runtime UI generation is not used."
++                ? "Editable Lighting Scenario UI hierarchy was built/repaired in the current scene. The application shell remains scene-authored; PreviewPanel also has a runtime self-repair fallback for missing internal children."
+                 : "Editable Lighting Scenario UI hierarchy is already valid. No rebuild was necessary.");
+         }
+ 
+@@ -127,7 +127,7 @@
+             {
+                 Debug.Log(
+                     "Lighting Scenario Tool repaired missing editable UI references/hierarchy before entering Play Mode. " +
+-                    "The repaired UI remains editable in the scene and is not generated at runtime.");
++                    "The repaired UI remains editable in the scene. PreviewPanel also contains a runtime fallback for missing internal Preview children.");
+             }
+         }
+ 
+--- a/README.md
++++ b/README.md
+@@ -155,7 +155,7 @@
+ 4. Save the scene if Unity marks it dirty.
+ 5. Edit the generated `Background` hierarchy directly in the Inspector / Scene / Hierarchy views.
+ 
+-Before Play Mode, the Editor automatically repairs missing Timeline chrome/templates in **Edit Mode**. Runtime UI generation is still disabled. The repaired objects remain in the scene and are editable.
++Before Play Mode, the Editor automatically repairs missing Timeline/Preview chrome and templates in **Edit Mode**. The application shell remains scene-authored. In addition, `PreviewPanel` now has a narrow runtime self-repair fallback that creates only missing Preview children (content, toolbar controls, layers, or the light template) when a partially broken scene reaches Play Mode. The repaired Editor objects remain in the scene and are editable.
+ 
+ Persistent Timeline / Preview / application UI references are serialized on their components. After the references have been captured, moving or renaming those referenced GameObjects does not break initialization. Scenes produced by the previous revision are migrated by recursive name lookup when the serialized references are initially empty.
+ 

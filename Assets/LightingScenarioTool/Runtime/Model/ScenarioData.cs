@@ -19,8 +19,8 @@ namespace LightingScenarioTool
                 {
                     scenarioId = Guid.NewGuid().ToString("N"),
                     scenarioName = "New Scenario",
-                    dataFormatVersion = "3.0.0",
-                    duration = 10f
+                    dataFormatVersion = ScenarioDataUtility.CurrentFormatVersion,
+                    duration = ScenarioDataUtility.DefaultDuration
                 },
                 lightingUnits = new List<LightingUnitData>(),
                 editorSettings = new EditorSettingsData()
@@ -95,12 +95,15 @@ namespace LightingScenarioTool
         public float currentTime;
         public bool loop;
         public bool snapEnabled = true;
-        public float pixelsPerSecond = 100f;
-        public float previewLightSize = 54f;
+        public float pixelsPerSecond = ScenarioDataUtility.DefaultPixelsPerSecond;
+        public float previewLightSize = ScenarioDataUtility.DefaultPreviewLightSize;
 
         // Stored in the project JSON so the preview background is restored on load.
         // The selected file path is intentionally stored as-is (normally an absolute path).
         public string previewBackgroundImagePath;
+
+        // false by default keeps unit names visible when loading projects saved by older versions.
+        public bool hidePreviewUnitNames;
     }
 
     internal static class LightingScenarioDefaults

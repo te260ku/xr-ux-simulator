@@ -1,0 +1,693 @@
+--- a/Runtime/UI/TimelinePanel.cs
++++ b/Runtime/UI/TimelinePanel.cs
+@@ -53,20 +53,24 @@
+         public void Initialize(LightingScenarioApp app)
+         {
+             _app = app;
+-            if (!BindExistingChrome())
++
++            var chromeWasValid = BindExistingChrome();
++            if (!chromeWasValid && !EnsureChrome())
+             {
+-#if UNITY_EDITOR
+-                if (!Application.isPlaying)
+-                    BuildChrome();
+-                else
+-#endif
+-                {
+-                    Debug.LogError(
+-                        "Timeline UI hierarchy is missing. UI is no longer generated at runtime. " +
+-                        "Run Tools > Lighting Scenario > Build Editable UI In Current Scene.", this);
+-                    enabled = false;
+-                    return;
+-                }
++                Debug.LogError(
++                    "Timeline UI hierarchy could not be repaired. " +
++                    "Run Tools > Lighting Scenario > Rebuild Editable UI In Current Scene.", this);
++                enabled = false;
++                return;
++            }
++
++            enabled = true;
++            if (!chromeWasValid && Application.isPlaying)
++            {
++                Debug.LogWarning(
++                    "Timeline UI hierarchy was incomplete and has been repaired at runtime. " +
++                    "To persist the repaired hierarchy in the scene, run Tools > Lighting Scenario > " +
++                    "Build Editable UI In Current Scene while not in Play Mode.", this);
+             }
+ 
+             var wheel = gameObject.GetComponent<TimelineWheelInput>() ?? gameObject.AddComponent<TimelineWheelInput>();
+@@ -91,8 +95,8 @@
+             // working even if the user moves or renames objects in the Hierarchy.
+             if (HasRequiredChrome()) return true;
+ 
+-            // Migration path for scenes created by the previous revision. First try the
+-            // original paths, then fall back to an exact-name recursive lookup so moving a
++            // Migration path for scenes created by previous revisions. First try the
++            // original paths, then fall back to exact-name recursive lookup so moving a
+             // viewport into a layout container does not break runtime initialization.
+             _rulerViewport ??= transform.Find("RulerViewport") as RectTransform;
+             _rulerViewport ??= FindDescendant<RectTransform>(transform, "RulerViewport");
+@@ -152,58 +156,50 @@
+                    _labelsViewport != null && _labelsContent != null &&
+                    _timeViewport != null && _timeContent != null &&
+                    _marqueeSelection != null && _horizontalScrollbar != null &&
+-                   _trackLabelTemplate != null && _trackTimeTemplate != null && _keyframeTemplate != null;
++                   HasRequiredTrackLabelTemplate() && HasRequiredTrackTimeTemplate() &&
++                   _keyframeTemplate != null && _keyframeTemplate.HasRequiredVisual();
+         }
+ 
+-        private static Transform FindDescendant(Transform root, string exactName)
++        private bool HasRequiredTrackLabelTemplate()
+         {
+-            if (root == null) return null;
+-            foreach (var child in root.GetComponentsInChildren<Transform>(true))
+-            {
+-                if (child != root && child.name == exactName) return child;
+-            }
+-            return null;
++            // BuildTrackLabel() requires the row Image, while the editable controls inside
++            // the template are optional and may intentionally be removed/customized.
++            return _trackLabelTemplate != null && _trackLabelTemplate.GetComponent<Image>() != null;
+         }
+ 
+-        private static T FindDescendant<T>(Transform root, string exactName) where T : Component
++        private bool HasRequiredTrackTimeTemplate()
+         {
+-            var t = FindDescendant(root, exactName);
+-            return t != null ? t.GetComponent<T>() : null;
++            if (_trackTimeTemplate == null || _trackTimeTemplate.GetComponent<Image>() == null) return false;
++            var lane = _trackTimeTemplate.transform.Find("ColorKeyframeLane");
++            return lane is RectTransform && lane.GetComponent<Image>() != null;
+         }
+ 
+-#if UNITY_EDITOR
+-        internal bool EditorRepairChrome(LightingScenarioApp app)
++        private bool EnsureChrome()
+         {
+-            _app = app;
+-            var bound = BindExistingChrome();
+-            var changed = false;
+-
+-            // The track-label template is visual design data only. TrackLabelClick is
+-            // attached to runtime instances in BuildTrackLabel(), so keeping it on the
+-            // scene template is unnecessary and can preserve stale script references.
+-            if (_trackLabelTemplate != null)
+-            {
+-                var templateClicks = _trackLabelTemplate.GetComponents<TrackLabelClick>();
+-                for (var i = 0; i < templateClicks.Length; i++)
+-                {
+-                    if (templateClicks[i] == null) continue;
+-                    Object.DestroyImmediate(templateClicks[i]);
+-                    changed = true;
+-                }
+-            }
+-
+-            if (_keyframeTemplate != null)
+-            {
+-                changed |= _keyframeTemplate.EditorEnsureSelectionRing();
+-            }
++            BindExistingChrome();
+ 
+-            if (bound) return changed;
++            // Preserve an authored Timeline whenever possible. Only recreate the optional
++            // decorative header/corner when this panel has no recognizable timeline chrome.
++            var hasExistingTimelineChrome = _rulerViewport != null || _labelsViewport != null ||
++                                            _timeViewport != null || _horizontalScrollbar != null ||
++                                            FindDescendant(transform, "TimelineSectionHeader") != null ||
++                                            FindDescendant(transform, "Corner") != null;
++            if (!hasExistingTimelineChrome)
++                EnsureDecorativeChrome();
++
++            EnsureRulerHierarchy();
++            EnsureLabelsHierarchy();
++            EnsureTimeHierarchy();
++            EnsureHorizontalScrollbar();
++            EnsureTemplates();
+ 
+-            var wasEmpty = transform.childCount == 0;
++            BindExistingChrome();
++            return HasRequiredChrome();
++        }
+ 
+-            // Decorative chrome is only recreated when the panel is completely empty.
+-            // This avoids overwriting a designer-authored section header/corner.
+-            if (wasEmpty)
++        private void EnsureDecorativeChrome()
++        {
++            if (FindDescendant(transform, "TimelineSectionHeader") == null)
+             {
+                 var sectionHeader = UiFactory.CreateUIObject("TimelineSectionHeader", transform);
+                 var sectionHeaderRt = (RectTransform)sectionHeader.transform;
+@@ -218,7 +214,10 @@
+                 titleRt.anchorMax = Vector2.one;
+                 titleRt.offsetMin = new Vector2(12f, 0f);
+                 titleRt.offsetMax = new Vector2(-12f, 0f);
++            }
+ 
++            if (FindDescendant(transform, "Corner") == null)
++            {
+                 var corner = UiFactory.CreateUIObject("Corner", transform);
+                 var cornerRt = (RectTransform)corner.transform;
+                 cornerRt.anchorMin = cornerRt.anchorMax = new Vector2(0f, 1f);
+@@ -232,9 +231,25 @@
+                 cornerText.color = AppTheme.TextSecondary;
+                 cornerText.margin = new Vector4(12f, 0f, 4f, 0f);
+                 cornerText.raycastTarget = false;
+-                changed = true;
+             }
+ 
++            if (FindDescendant(transform, "LowerLeft") == null)
++            {
++                var lowerLeft = UiFactory.CreateUIObject("LowerLeft", transform);
++                var lowerLeftRt = (RectTransform)lowerLeft.transform;
++                lowerLeftRt.anchorMin = new Vector2(0f, 0f);
++                lowerLeftRt.anchorMax = new Vector2(0f, 0f);
++                lowerLeftRt.pivot = Vector2.zero;
++                lowerLeftRt.anchoredPosition = Vector2.zero;
++                lowerLeftRt.sizeDelta = new Vector2(LabelWidth, ScrollbarHeight);
++                UiFactory.AddImage(lowerLeft, AppTheme.Panel).raycastTarget = false;
++            }
++        }
++
++        private void EnsureRulerHierarchy()
++        {
++            if (_rulerViewport == null)
++                _rulerViewport = FindDescendant<RectTransform>(transform, "RulerViewport");
+             if (_rulerViewport == null)
+             {
+                 _rulerViewport = CreateViewport("RulerViewport", transform, AppTheme.Elevated);
+@@ -243,14 +258,19 @@
+                 _rulerViewport.pivot = new Vector2(0.5f, 1f);
+                 _rulerViewport.offsetMin = new Vector2(LabelWidth, -(SectionHeaderHeight + RulerHeight));
+                 _rulerViewport.offsetMax = new Vector2(0f, -SectionHeaderHeight);
+-                changed = true;
+             }
++            EnsureViewportComponents(_rulerViewport, AppTheme.Elevated);
++
++            if (_rulerContent == null)
++                _rulerContent = FindDescendant<RectTransform>(_rulerViewport, "RulerContent");
+             if (_rulerContent == null)
+-            {
+                 _rulerContent = CreateTopLeftContent("RulerContent", _rulerViewport);
+-                changed = true;
+-            }
++        }
+ 
++        private void EnsureLabelsHierarchy()
++        {
++            if (_labelsViewport == null)
++                _labelsViewport = FindDescendant<RectTransform>(transform, "LabelsViewport");
+             if (_labelsViewport == null)
+             {
+                 _labelsViewport = CreateViewport("LabelsViewport", transform, AppTheme.Panel);
+@@ -259,14 +279,19 @@
+                 _labelsViewport.pivot = new Vector2(0f, 0.5f);
+                 _labelsViewport.offsetMin = new Vector2(0f, ScrollbarHeight);
+                 _labelsViewport.offsetMax = new Vector2(LabelWidth, -(SectionHeaderHeight + RulerHeight));
+-                changed = true;
+             }
++            EnsureViewportComponents(_labelsViewport, AppTheme.Panel);
++
++            if (_labelsContent == null)
++                _labelsContent = FindDescendant<RectTransform>(_labelsViewport, "LabelsContent");
+             if (_labelsContent == null)
+-            {
+                 _labelsContent = CreateTopLeftContent("LabelsContent", _labelsViewport);
+-                changed = true;
+-            }
++        }
+ 
++        private void EnsureTimeHierarchy()
++        {
++            if (_timeViewport == null)
++                _timeViewport = FindDescendant<RectTransform>(transform, "TimeViewport");
+             if (_timeViewport == null)
+             {
+                 _timeViewport = CreateViewport("TimeViewport", transform, AppTheme.TrackEven);
+@@ -274,144 +299,223 @@
+                 _timeViewport.anchorMax = Vector2.one;
+                 _timeViewport.offsetMin = new Vector2(LabelWidth, ScrollbarHeight);
+                 _timeViewport.offsetMax = new Vector2(0f, -(SectionHeaderHeight + RulerHeight));
+-                changed = true;
+             }
++            EnsureViewportComponents(_timeViewport, AppTheme.TrackEven);
++
++            if (_timeContent == null)
++                _timeContent = FindDescendant<RectTransform>(_timeViewport, "TimeContent");
+             if (_timeContent == null)
+-            {
+                 _timeContent = CreateTopLeftContent("TimeContent", _timeViewport);
+-                changed = true;
+-            }
++
++            if (_marqueeSelection == null)
++                _marqueeSelection = FindDescendant<RectTransform>(_timeViewport, "MarqueeSelection");
+             if (_marqueeSelection == null)
+-            {
+                 BuildMarqueeSelection();
+-                changed = true;
++            else
++                EnsureMarqueeVisual();
++        }
++
++        private static void EnsureViewportComponents(RectTransform viewport, Color defaultColor)
++        {
++            if (viewport == null) return;
++            var image = viewport.GetComponent<Image>() ?? UiFactory.AddImage(viewport.gameObject, defaultColor);
++            image.raycastTarget = true;
++            if (viewport.GetComponent<RectMask2D>() == null)
++                viewport.gameObject.AddComponent<RectMask2D>();
++        }
++
++        private void EnsureMarqueeVisual()
++        {
++            if (_marqueeSelection == null) return;
++            var image = _marqueeSelection.GetComponent<Image>() ??
++                        UiFactory.AddImage(_marqueeSelection.gameObject,
++                            new Color(AppTheme.Accent.r, AppTheme.Accent.g, AppTheme.Accent.b, 0.16f));
++            image.raycastTarget = false;
++            var outline = _marqueeSelection.GetComponent<Outline>() ?? _marqueeSelection.gameObject.AddComponent<Outline>();
++            outline.effectColor = AppTheme.Accent;
++            outline.effectDistance = new Vector2(1f, 1f);
++        }
++
++        private void EnsureHorizontalScrollbar()
++        {
++            if (_horizontalScrollbar == null)
++            {
++                var existing = FindDescendant(transform, "HorizontalScrollbar");
++                if (existing != null)
++                    _horizontalScrollbar = existing.GetComponent<Scrollbar>() ?? existing.gameObject.AddComponent<Scrollbar>();
+             }
+ 
+             if (_horizontalScrollbar == null)
+             {
+                 BuildHorizontalScrollbar();
+-                changed = true;
++                return;
++            }
++
++            var scrollbarGo = _horizontalScrollbar.gameObject;
++            var background = scrollbarGo.GetComponent<Image>() ?? UiFactory.AddImage(scrollbarGo, AppTheme.Background);
++            background.raycastTarget = true;
++
++            var slidingArea = scrollbarGo.transform.Find("Sliding Area") as RectTransform;
++            if (slidingArea == null)
++            {
++                var slidingAreaGo = UiFactory.CreateUIObject("Sliding Area", scrollbarGo.transform);
++                slidingArea = (RectTransform)slidingAreaGo.transform;
++                UiFactory.Stretch(slidingArea);
++                slidingArea.offsetMin = new Vector2(1f, 2f);
++                slidingArea.offsetMax = new Vector2(-1f, -2f);
+             }
+ 
++            var handle = slidingArea.Find("Handle") as RectTransform;
++            if (handle == null)
++            {
++                var handleGo = UiFactory.CreateUIObject("Handle", slidingArea);
++                handle = (RectTransform)handleGo.transform;
++                UiFactory.Stretch(handle);
++            }
++
++            var handleImage = handle.GetComponent<Image>() ?? UiFactory.AddImage(handle.gameObject, AppTheme.TextSecondary);
++            _horizontalScrollbar.direction = Scrollbar.Direction.LeftToRight;
++            _horizontalScrollbar.targetGraphic = handleImage;
++            _horizontalScrollbar.handleRect = handle;
++        }
++
++        private void EnsureTemplates()
++        {
+             var templates = FindDescendant(transform, "TimelineTemplates");
+             if (templates == null)
+-            {
+                 templates = UiFactory.CreateUIObject("TimelineTemplates", transform).transform;
+-                changed = true;
+-            }
++
+             templates.gameObject.SetActive(true);
+ 
++            EnsureTrackLabelTemplate(templates);
++            EnsureTrackTimeTemplate(templates);
++            EnsureKeyframeTemplate(templates);
++
++            // Timeline templates are source objects only and should never render in the scene.
++            templates.gameObject.SetActive(false);
++        }
++
++        private void EnsureTrackLabelTemplate(Transform templates)
++        {
++            if (_trackLabelTemplate == null)
++            {
++                var existing = FindDescendant(templates, "TrackLabelTemplate");
++                _trackLabelTemplate = existing != null ? existing.gameObject : null;
++            }
+             if (_trackLabelTemplate == null)
+             {
+                 BuildTrackLabelTemplate(templates);
+-                changed = true;
++                return;
++            }
++
++            // Do not rebuild optional controls on an authored template. Only repair the
++            // component that BuildTrackLabel() dereferences unconditionally.
++            var rowImage = _trackLabelTemplate.GetComponent<Image>() ??
++                           UiFactory.AddImage(_trackLabelTemplate, AppTheme.TrackHeaderEven);
++            rowImage.raycastTarget = true;
++        }
++
++        private void EnsureTrackTimeTemplate(Transform templates)
++        {
++            if (_trackTimeTemplate == null)
++            {
++                var existing = FindDescendant(templates, "TrackTimeTemplate");
++                _trackTimeTemplate = existing != null ? existing.gameObject : null;
+             }
+             if (_trackTimeTemplate == null)
+             {
+                 BuildTrackTimeTemplate(templates);
+-                changed = true;
++                return;
++            }
++
++            var rowImage = _trackTimeTemplate.GetComponent<Image>() ?? UiFactory.AddImage(_trackTimeTemplate, AppTheme.TrackEven);
++            rowImage.raycastTarget = false;
++            var lane = _trackTimeTemplate.transform.Find("ColorKeyframeLane") as RectTransform;
++            if (lane == null)
++            {
++                lane = CreateLane("ColorKeyframeLane", _trackTimeTemplate.transform, 5f, LaneHeight, new Color(0f, 0f, 0f, 0f));
++                lane.sizeDelta = new Vector2(600f, LaneHeight);
++            }
++            else
++            {
++                var laneImage = lane.GetComponent<Image>() ?? UiFactory.AddImage(lane.gameObject, new Color(0f, 0f, 0f, 0f));
++                laneImage.raycastTarget = true;
++            }
++        }
++
++        private void EnsureKeyframeTemplate(Transform templates)
++        {
++            if (_keyframeTemplate == null)
++            {
++                var existing = FindDescendant(templates, "ColorKeyframeTemplate");
++                if (existing != null)
++                    _keyframeTemplate = existing.GetComponent<ColorKeyframeView>() ?? existing.gameObject.AddComponent<ColorKeyframeView>();
+             }
+             if (_keyframeTemplate == null)
+             {
+                 var keyframeTemplateGo = UiFactory.CreateUIObject("ColorKeyframeTemplate", templates);
+                 _keyframeTemplate = keyframeTemplateGo.AddComponent<ColorKeyframeView>();
+-                _keyframeTemplate.EditorBuildVisual();
+-                changed = true;
++                _keyframeTemplate.BuildDefaultVisual();
++                return;
+             }
+-            templates.gameObject.SetActive(false);
+ 
+-            if (wasEmpty)
++            _keyframeTemplate.EnsureVisual();
++        }
++
++        private static Transform FindDescendant(Transform root, string exactName)
++        {
++            if (root == null) return null;
++            foreach (var child in root.GetComponentsInChildren<Transform>(true))
+             {
+-                var lowerLeft = UiFactory.CreateUIObject("LowerLeft", transform);
+-                var lowerLeftRt = (RectTransform)lowerLeft.transform;
+-                lowerLeftRt.anchorMin = new Vector2(0f, 0f);
+-                lowerLeftRt.anchorMax = new Vector2(0f, 0f);
+-                lowerLeftRt.pivot = Vector2.zero;
+-                lowerLeftRt.anchoredPosition = Vector2.zero;
+-                lowerLeftRt.sizeDelta = new Vector2(LabelWidth, ScrollbarHeight);
+-                UiFactory.AddImage(lowerLeft, AppTheme.Panel).raycastTarget = false;
++                if (child != root && child.name == exactName) return child;
+             }
++            return null;
++        }
+ 
+-            BindExistingChrome();
+-            return changed;
++        private static T FindDescendant<T>(Transform root, string exactName) where T : Component
++        {
++            var t = FindDescendant(root, exactName);
++            return t != null ? t.GetComponent<T>() : null;
+         }
+-#endif
+ 
+-        private void BuildChrome()
++#if UNITY_EDITOR
++        internal bool EditorRepairChrome(LightingScenarioApp app)
+         {
+-            var sectionHeader = UiFactory.CreateUIObject("TimelineSectionHeader", transform);
+-            var sectionHeaderRt = (RectTransform)sectionHeader.transform;
+-            sectionHeaderRt.anchorMin = new Vector2(0f, 1f);
+-            sectionHeaderRt.anchorMax = new Vector2(1f, 1f);
+-            sectionHeaderRt.pivot = new Vector2(0.5f, 1f);
+-            sectionHeaderRt.sizeDelta = new Vector2(0f, SectionHeaderHeight);
+-            UiFactory.AddImage(sectionHeader, AppTheme.Panel).raycastTarget = false;
+-            var title = UiFactory.CreateSectionTitle(sectionHeader.transform, "Timeline", 140f);
+-            var titleRt = (RectTransform)title.transform;
+-            titleRt.anchorMin = new Vector2(0f, 0f);
+-            titleRt.anchorMax = new Vector2(1f, 1f);
+-            titleRt.offsetMin = new Vector2(12f, 0f);
+-            titleRt.offsetMax = new Vector2(-12f, 0f);
+-
+-            var corner = UiFactory.CreateUIObject("Corner", transform);
+-            var cornerRt = (RectTransform)corner.transform;
+-            cornerRt.anchorMin = cornerRt.anchorMax = new Vector2(0f, 1f);
+-            cornerRt.pivot = new Vector2(0f, 1f);
+-            cornerRt.anchoredPosition = new Vector2(0f, -SectionHeaderHeight);
+-            cornerRt.sizeDelta = new Vector2(LabelWidth, RulerHeight);
+-            UiFactory.AddImage(corner, AppTheme.Elevated);
+-            var cornerTextGo = UiFactory.CreateUIObject("CornerText", corner.transform);
+-            UiFactory.Stretch((RectTransform)cornerTextGo.transform);
+-            var cornerText = UiFactory.AddText(cornerTextGo, "Tracks", AppTheme.SecondarySize, TextAnchor.MiddleLeft);
+-            cornerText.color = AppTheme.TextSecondary;
+-            cornerText.margin = new Vector4(12f, 0f, 4f, 0f);
+-            cornerText.raycastTarget = false;
+-
+-            _rulerViewport = CreateViewport("RulerViewport", transform, AppTheme.Elevated);
+-            _rulerViewport.anchorMin = new Vector2(0f, 1f);
+-            _rulerViewport.anchorMax = new Vector2(1f, 1f);
+-            _rulerViewport.pivot = new Vector2(0.5f, 1f);
+-            _rulerViewport.offsetMin = new Vector2(LabelWidth, -(SectionHeaderHeight + RulerHeight));
+-            _rulerViewport.offsetMax = new Vector2(0f, -SectionHeaderHeight);
+-            _rulerContent = CreateTopLeftContent("RulerContent", _rulerViewport);
+-
+-            _labelsViewport = CreateViewport("LabelsViewport", transform, AppTheme.Panel);
+-            _labelsViewport.anchorMin = new Vector2(0f, 0f);
+-            _labelsViewport.anchorMax = new Vector2(0f, 1f);
+-            _labelsViewport.pivot = new Vector2(0f, 0.5f);
+-            _labelsViewport.offsetMin = new Vector2(0f, ScrollbarHeight);
+-            _labelsViewport.offsetMax = new Vector2(LabelWidth, -(SectionHeaderHeight + RulerHeight));
+-            _labelsContent = CreateTopLeftContent("LabelsContent", _labelsViewport);
+-
+-            _timeViewport = CreateViewport("TimeViewport", transform, AppTheme.TrackEven);
+-            _timeViewport.anchorMin = Vector2.zero;
+-            _timeViewport.anchorMax = Vector2.one;
+-            _timeViewport.offsetMin = new Vector2(LabelWidth, ScrollbarHeight);
+-            _timeViewport.offsetMax = new Vector2(0f, -(SectionHeaderHeight + RulerHeight));
+-            _timeContent = CreateTopLeftContent("TimeContent", _timeViewport);
+-            BuildMarqueeSelection();
+-            var marqueeInput = _timeViewport.gameObject.AddComponent<TimelineMarqueeSelectInput>();
+-            marqueeInput.Initialize(this);
+-
+-            var lowerLeft = UiFactory.CreateUIObject("LowerLeft", transform);
+-            var lowerLeftRt = (RectTransform)lowerLeft.transform;
+-            lowerLeftRt.anchorMin = new Vector2(0f, 0f);
+-            lowerLeftRt.anchorMax = new Vector2(0f, 0f);
+-            lowerLeftRt.pivot = Vector2.zero;
+-            lowerLeftRt.anchoredPosition = Vector2.zero;
+-            lowerLeftRt.sizeDelta = new Vector2(LabelWidth, ScrollbarHeight);
+-            UiFactory.AddImage(lowerLeft, AppTheme.Panel).raycastTarget = false;
+-
+-            BuildHorizontalScrollbar();
+-
+-            var templates = UiFactory.CreateUIObject("TimelineTemplates", transform);
+-            BuildTrackLabelTemplate(templates.transform);
+-            BuildTrackTimeTemplate(templates.transform);
+-            var keyframeTemplateGo = UiFactory.CreateUIObject("ColorKeyframeTemplate", templates.transform);
+-            _keyframeTemplate = keyframeTemplateGo.AddComponent<ColorKeyframeView>();
+-            _keyframeTemplate.EditorBuildVisual();
+-            templates.SetActive(false);
++            _app = app;
++            var templatesBeforeRepair = FindDescendant(transform, "TimelineTemplates");
++            var templatesWereActive = templatesBeforeRepair != null && templatesBeforeRepair.gameObject.activeSelf;
++            var referencesWereComplete = HasRequiredChrome();
++            var wasValid = BindExistingChrome();
++            var changed = !referencesWereComplete || !wasValid || templatesWereActive;
++
++            if (!EnsureChrome())
++                return changed;
++
++            // Runtime row behavior belongs on instantiated rows, not on the editable template.
++            if (_trackLabelTemplate != null)
++            {
++                var templateClicks = _trackLabelTemplate.GetComponents<TrackLabelClick>();
++                for (var i = 0; i < templateClicks.Length; i++)
++                {
++                    if (templateClicks[i] == null) continue;
++                    Object.DestroyImmediate(templateClicks[i]);
++                    changed = true;
++                }
++            }
++
++            if (_keyframeTemplate != null)
++                changed |= _keyframeTemplate.EditorEnsureSelectionRing();
++
++            var templates = FindDescendant(transform, "TimelineTemplates");
++            if (templates != null && templates.gameObject.activeSelf)
++            {
++                templates.gameObject.SetActive(false);
++                changed = true;
++            }
++
++            return changed;
+         }
++#endif
+ 
+         private static RectTransform CreateViewport(string name, Transform parent, Color color)
+         {
+@@ -560,6 +664,12 @@
+ 
+         public void Rebuild()
+         {
++            if (!HasRequiredChrome() && !EnsureChrome())
++            {
++                Debug.LogError("Timeline hierarchy/templates could not be configured.", this);
++                return;
++            }
++
+             ClearChildren(_rulerContent);
+             ClearChildren(_labelsContent);
+             ClearChildren(_timeContent);
+@@ -1353,14 +1463,14 @@
+             _app = app;
+             _unitId = unitId;
+             _keyframeId = keyframeId;
+-            BindVisualReferences();
+-            if (_rt == null || _image == null || _outline == null)
++            if (!EnsureVisual())
+             {
+-                Debug.LogError("ColorKeyframeTemplate is incomplete. Edit TimelineTemplates/ColorKeyframeTemplate in the scene.", this);
++                Debug.LogError("ColorKeyframe visual could not be configured.", this);
+                 enabled = false;
+                 return;
+             }
+ 
++            enabled = true;
+             EnsureSelectionRing();
+             var key = _app.Document.FindColorKeyframe(unitId, keyframeId);
+             _image.color = key != null ? key.color.ToUnityColor() : Color.black;
+@@ -1371,7 +1481,7 @@
+ 
+         private void BindVisualReferences()
+         {
+-            if (_rt == null) _rt = (RectTransform)transform;
++            if (_rt == null) _rt = transform as RectTransform;
+             if (_image == null) _image = GetComponent<Image>();
+             if (_outline == null) _outline = GetComponent<Outline>();
+             if (_selectionRing == null)
+@@ -1381,9 +1491,46 @@
+             }
+         }
+ 
+-        public void EditorBuildVisual()
++        internal bool HasRequiredVisual()
+         {
+-            _rt = (RectTransform)transform;
++            BindVisualReferences();
++            return _rt != null && _image != null && _outline != null;
++        }
++
++        internal bool EnsureVisual()
++        {
++            BindVisualReferences();
++            if (_rt == null) return false;
++
++            var visualWasEmpty = _image == null && _outline == null;
++            if (visualWasEmpty)
++            {
++                _rt.anchorMin = _rt.anchorMax = new Vector2(0f, 0.5f);
++                _rt.pivot = new Vector2(0.5f, 0.5f);
++                _rt.sizeDelta = new Vector2(14f, 14f);
++                _rt.localRotation = Quaternion.Euler(0f, 0f, 45f);
++            }
++            else if (_rt.sizeDelta.x <= 0f || _rt.sizeDelta.y <= 0f)
++            {
++                _rt.sizeDelta = new Vector2(14f, 14f);
++            }
++
++            _image ??= UiFactory.AddImage(gameObject, Color.black);
++            _image.raycastTarget = true;
++            _outline ??= gameObject.GetComponent<Outline>() ?? gameObject.AddComponent<Outline>();
++            if (_outline.effectDistance == Vector2.zero)
++                _outline.effectDistance = new Vector2(1f, 1f);
++            if (_outline.effectColor.a <= 0f)
++                _outline.effectColor = AppTheme.TextSecondary;
++
++            EnsureSelectionRing();
++            return HasRequiredVisual();
++        }
++
++        internal void BuildDefaultVisual()
++        {
++            _rt = transform as RectTransform;
++            if (_rt == null) return;
+             _rt.anchorMin = _rt.anchorMax = new Vector2(0f, 0.5f);
+             _rt.pivot = new Vector2(0.5f, 0.5f);
+             _rt.sizeDelta = new Vector2(14f, 14f);
+@@ -1396,6 +1543,11 @@
+             EnsureSelectionRing();
+         }
+ 
++        public void EditorBuildVisual()
++        {
++            BuildDefaultVisual();
++        }
++
+         internal bool EditorEnsureSelectionRing()
+         {
+             BindVisualReferences();
+@@ -1415,7 +1567,7 @@
+ 
+         private void EnsureSelectionRing()
+         {
+-            if (_rt == null) _rt = (RectTransform)transform;
++            if (_rt == null) _rt = transform as RectTransform;
+             if (_selectionRing != null) return;
+ 
+             var existing = transform.Find("SelectionRing") as RectTransform;
+--- a/Editor/LightingScenarioSceneCreator.cs
++++ b/Editor/LightingScenarioSceneCreator.cs
+@@ -65,7 +65,7 @@
+             Selection.activeGameObject = app.gameObject;
+ 
+             Debug.Log(changed
+-                ? "Editable Lighting Scenario UI hierarchy was built/repaired in the current scene. The application shell remains scene-authored; PreviewPanel also has a runtime self-repair fallback for missing internal children."
++                ? "Editable Lighting Scenario UI hierarchy was built/repaired in the current scene. The application shell remains scene-authored; TimelinePanel and PreviewPanel also have runtime self-repair fallbacks for missing internal children/templates."
+                 : "Editable Lighting Scenario UI hierarchy is already valid. No rebuild was necessary.");
+         }
+ 
+@@ -127,7 +127,7 @@
+             {
+                 Debug.Log(
+                     "Lighting Scenario Tool repaired missing editable UI references/hierarchy before entering Play Mode. " +
+-                    "The repaired UI remains editable in the scene. PreviewPanel also contains a runtime fallback for missing internal Preview children.");
++                    "The repaired UI remains editable in the scene. TimelinePanel and PreviewPanel also contain runtime fallbacks for missing internal children/templates.");
+             }
+         }
+ 
+--- a/README.md
++++ b/README.md
+@@ -155,7 +155,7 @@
+ 4. Save the scene if Unity marks it dirty.
+ 5. Edit the generated `Background` hierarchy directly in the Inspector / Scene / Hierarchy views.
+ 
+-Before Play Mode, the Editor automatically repairs missing Timeline/Preview chrome and templates in **Edit Mode**. The application shell remains scene-authored. In addition, `PreviewPanel` now has a narrow runtime self-repair fallback that creates only missing Preview children (content, toolbar controls, layers, or the light template) when a partially broken scene reaches Play Mode. The repaired Editor objects remain in the scene and are editable.
++Before Play Mode, the Editor automatically repairs missing Timeline/Preview chrome and templates in **Edit Mode**. The application shell remains scene-authored. In addition, `TimelinePanel` and `PreviewPanel` have narrow runtime self-repair fallbacks. `TimelinePanel` repairs only required timeline viewports/content, the scrollbar, and required template pieces; `PreviewPanel` repairs only missing Preview children (content, toolbar controls, layers, or the light template). Existing authored/customized UI is preserved wherever the missing element is not required for runtime behavior. The repaired Editor objects remain in the scene and are editable.
+ 
+ Persistent Timeline / Preview / application UI references are serialized on their components. After the references have been captured, moving or renaming those referenced GameObjects does not break initialization. Scenes produced by the previous revision are migrated by recursive name lookup when the serialized references are initially empty.
+ 

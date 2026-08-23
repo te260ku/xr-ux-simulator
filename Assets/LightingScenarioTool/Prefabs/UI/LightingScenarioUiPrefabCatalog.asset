@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fe41ba809f97449c8da3746175c96160, type: 3}
+  m_Name: LightingScenarioUiPrefabCatalog
+  m_EditorClassIdentifier: Assembly-CSharp::LightingScenarioTool.LightingScenarioUiPrefabCatalog
+  _trackLabelPrefab: {fileID: 3746400747149702222, guid: 69cfc28e9e74bb044b7d49a8bf28b7d0, type: 3}
+  _trackTimePrefab: {fileID: 1870956374013670480, guid: 45877be016f6acc4986497db3ab4033f, type: 3}
+  _colorKeyframePrefab: {fileID: 9167683084058573457, guid: 27f9419c21a864e41b3e0b3985a490ec, type: 3}
+  _rulerLabelPrefab: {fileID: 1181236809270426416, guid: bf20e77f513e61c48a661446e795bb27, type: 3}
+  _rulerInteractionPrefab: {fileID: 8485460292917708705, guid: d65d5eb694155b14d9edc42e2d0d025f, type: 3}
+  _timePlayheadPrefab: {fileID: 6045576082143702443, guid: ab34cebed86582643af4228777b209b0, type: 3}
+  _rulerPlayheadPrefab: {fileID: 3912529072615261061, guid: 0a1b93be5e0a5fe40bd03a3748dbf7c0, type: 3}
+  _previewLightPrefab: {fileID: 3162079760632570839, guid: 6c495cc219b6f5e4a8c6e3ae1a137079, type: 3}
+  _menuPopupPrefab: {fileID: 958813075908588922, guid: fe1d5503c01daeb418e5725433bd5121, type: 3}
+  _menuItemPrefab: {fileID: 3668985431298602903, guid: 1ee1e4c9bc6305d42a8f6b6f11f9342b, type: 3}
+  _colorPickerPrefab: {fileID: 4572500394267323566, guid: 315e8c2f63090a948b53632c680fbe77, type: 3}
+  _presetSwatchPrefab: {fileID: 362405790628291426, guid: d54373b69a009884e979eed4b616b648, type: 3}
+  _dialogPrefab: {fileID: 4269935407445223335, guid: 1c3f652dc4151ec4d9eb02e7e9188924, type: 3}

@@ -1,0 +1,91 @@
+--- LightingScenarioTool_original/LightingScenarioTool_Refactored/Runtime/UI/TimelinePanel.cs	2026-08-22 14:45:10.000000000 +0000
++++ LightingScenarioTool_work/LightingScenarioTool_Refactored/Runtime/UI/TimelinePanel.cs	2026-08-22 14:55:33.681861217 +0000
+@@ -64,14 +64,11 @@
+                 return;
+             }
+ 
++            // A successful fallback repair is intentionally silent. Initialize() is allowed to
++            // rebind/repair scene references because Unity can invalidate serialized object
++            // references after script recompilation or scene migration even when the authored
++            // hierarchy itself is complete. Only an unrecoverable hierarchy is an error.
+             enabled = true;
+-            if (!chromeWasValid && Application.isPlaying)
+-            {
+-                Debug.LogWarning(
+-                    "Timeline UI hierarchy was incomplete and has been repaired at runtime. " +
+-                    "To regenerate and persist the complete default UI, run Tools > Lighting Scenario > " +
+-                    "Build Complete UI In Current Scene while not in Play Mode.", this);
+-            }
+ 
+             var wheel = gameObject.GetComponent<TimelineWheelInput>() ?? gameObject.AddComponent<TimelineWheelInput>();
+             wheel.Initialize(this);
+--- LightingScenarioTool_original/LightingScenarioTool_Refactored/Runtime/UI/PreviewPanel.cs	2026-08-22 14:45:10.000000000 +0000
++++ LightingScenarioTool_work/LightingScenarioTool_Refactored/Runtime/UI/PreviewPanel.cs	2026-08-22 14:55:33.682040793 +0000
+@@ -47,14 +47,10 @@
+                 return;
+             }
+ 
++            // A successful fallback repair is intentionally silent. Serialized references can
++            // be invalidated by recompilation/migration even though the generated hierarchy is
++            // usable. Only failure to restore the required Preview UI is treated as an error.
+             enabled = true;
+-            if (!chromeWasValid && Application.isPlaying)
+-            {
+-                Debug.LogWarning(
+-                    "Preview UI hierarchy was incomplete and has been repaired at runtime. " +
+-                    "To regenerate and persist the complete default UI, run Tools > Lighting Scenario > " +
+-                    "Build Complete UI In Current Scene while not in Play Mode.", this);
+-            }
+ 
+             if (_lightSizeSlider != null)
+             {
+--- LightingScenarioTool_original/LightingScenarioTool_Refactored/Editor/LightingScenarioSceneCreator.cs	2026-08-22 14:45:09.000000000 +0000
++++ LightingScenarioTool_work/LightingScenarioTool_Refactored/Editor/LightingScenarioSceneCreator.cs	2026-08-22 14:55:46.279622959 +0000
+@@ -59,7 +59,15 @@
+             // with the same complete and executable default UI structure.
+             app.EditorBuildCompleteUiHierarchy();
+ 
+-            EditorUtility.SetDirty(app);
++            // Run the same validation used before Play Mode immediately after generation.
++            // This catches any reference that was not populated by the initial build while we
++            // are still in Edit Mode, so runtime initialization does not need to mutate the UI.
++            app.EditorRepairUiHierarchy();
++
++            // The generated panel/template references live on child components, not only on
++            // LightingScenarioApp. Mark every component dirty so Unity serializes those object
++            // references into the scene before entering Play Mode or recompiling scripts.
++            MarkHierarchyDirty(app.gameObject);
+             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
+             Selection.activeGameObject = app.gameObject;
+ 
+@@ -93,7 +101,7 @@
+                 if (changed)
+                 {
+                     changedAny = true;
+-                    EditorUtility.SetDirty(app);
++                    MarkHierarchyDirty(app.gameObject);
+                     EditorSceneManager.MarkSceneDirty(app.gameObject.scene);
+                 }
+             }
+@@ -106,6 +114,21 @@
+             }
+         }
+ 
++        private static void MarkHierarchyDirty(GameObject root)
++        {
++            if (root == null) return;
++
++            foreach (var transform in root.GetComponentsInChildren<Transform>(true))
++            {
++                if (transform == null) continue;
++                EditorUtility.SetDirty(transform.gameObject);
++                foreach (var component in transform.GetComponents<Component>())
++                {
++                    if (component != null) EditorUtility.SetDirty(component);
++                }
++            }
++        }
++
+         internal static int RemoveMissingScriptsRecursively(GameObject root)
+         {
+             if (root == null) return 0;

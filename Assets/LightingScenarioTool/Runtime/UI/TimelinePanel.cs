@@ -1,7 +1,5 @@
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using TMPro;
 
@@ -9,23 +7,28 @@ namespace LightingScenarioTool
 {
     internal sealed class TimelinePanel : MonoBehaviour
     {
-        private const float LabelWidth = 230f;
-        private const float RulerHeight = 36f;
-        private const float RowHeight = 48f;
-        private const float LaneHeight = 38f;
-        private const float ScrollbarHeight = 12f;
+        private const float LabelWidth = 340f;
+        private const float SectionHeaderHeight = 32f;
+        private const float RulerHeight = 32f;
+        private const float RowHeight = 40f;
+        private const float LaneHeight = 30f;
+        private const float ScrollbarHeight = 10f;
 
         private LightingScenarioApp _app;
-        private RectTransform _rulerViewport;
-        private RectTransform _rulerContent;
-        private RectTransform _labelsViewport;
-        private RectTransform _labelsContent;
-        private RectTransform _timeViewport;
-        private RectTransform _timeContent;
-        private RectTransform _marqueeSelection;
+
+        // These references are serialized intentionally. The timeline is editor-authored UI,
+        // so runtime behavior must not depend on a fixed Transform path after the user
+        // rearranges or renames objects in the Hierarchy.
+        [SerializeField] private RectTransform _rulerViewport;
+        [SerializeField] private RectTransform _rulerContent;
+        [SerializeField] private RectTransform _labelsViewport;
+        [SerializeField] private RectTransform _labelsContent;
+        [SerializeField] private RectTransform _timeViewport;
+        [SerializeField] private RectTransform _timeContent;
+        [SerializeField] private RectTransform _marqueeSelection;
         private RectTransform _playhead;
         private RectTransform _rulerPlayhead;
-        private Scrollbar _horizontalScrollbar;
+        [SerializeField] private Scrollbar _horizontalScrollbar;
         private float _timeContentWidth;
         private float _rowsContentHeight;
         private float _verticalOffset;
@@ -38,71 +41,390 @@ namespace LightingScenarioTool
         private readonly Dictionary<string, Color> _trackLabelBaseColors = new Dictionary<string, Color>();
         private readonly Dictionary<string, Image> _trackTimeImages = new Dictionary<string, Image>();
         private readonly Dictionary<string, Color> _trackTimeBaseColors = new Dictionary<string, Color>();
+        private readonly Dictionary<string, Image> _trackAccentLines = new Dictionary<string, Image>();
 
         internal LightingScenarioApp App => _app;
 
         public void Initialize(LightingScenarioApp app)
         {
             _app = app;
-            BuildChrome();
-            var wheel = gameObject.GetComponent<TimelineWheelInput>() ?? gameObject.AddComponent<TimelineWheelInput>();
+
+            if (!BindExistingChrome())
+            {
+                Debug.LogError(
+                    "Timeline UI hierarchy is incomplete. " +
+                    "Run Tools > Lighting Scenario > Build Complete UI In Current Scene in Edit Mode.", this);
+                enabled = false;
+                return;
+            }
+
+            var wheel = GetComponent<TimelineWheelInput>();
+            var pan = GetComponent<TimelineMiddleMousePanInput>();
+            var marquee = _timeViewport.GetComponent<TimelineMarqueeSelectInput>();
+            if (wheel == null || pan == null || marquee == null)
+            {
+                Debug.LogError(
+                    "Timeline input components are incomplete. " +
+                    "Run Tools > Lighting Scenario > Build Complete UI In Current Scene in Edit Mode.", this);
+                enabled = false;
+                return;
+            }
+
+            enabled = true;
             wheel.Initialize(this);
-            var pan = gameObject.GetComponent<TimelineMiddleMousePanInput>() ?? gameObject.AddComponent<TimelineMiddleMousePanInput>();
             pan.Initialize(this);
+            marquee.Initialize(this);
+
+            _horizontalScrollbar.onValueChanged.RemoveListener(OnHorizontalScrollbarChanged);
+            _horizontalScrollbar.onValueChanged.AddListener(OnHorizontalScrollbarChanged);
         }
 
-        private void BuildChrome()
+        private bool BindExistingChrome()
         {
-            var corner = UiFactory.CreateUIObject("Corner", transform);
-            var cornerRt = (RectTransform)corner.transform;
-            cornerRt.anchorMin = cornerRt.anchorMax = new Vector2(0f, 1f);
-            cornerRt.pivot = new Vector2(0f, 1f);
-            cornerRt.sizeDelta = new Vector2(LabelWidth, RulerHeight);
-            UiFactory.AddImage(corner, new Color(0.13f, 0.13f, 0.13f, 1f));
-            var cornerTextGo = UiFactory.CreateUIObject("CornerText", corner.transform);
-            UiFactory.Stretch((RectTransform)cornerTextGo.transform);
-            var cornerText = UiFactory.AddText(cornerTextGo, "Lighting Tracks / Time", 13, TextAnchor.MiddleLeft);
-            cornerText.margin = new Vector4(8f, 0f, 4f, 0f);
-            cornerText.raycastTarget = false;
+            // Prefer serialized references. Once the editable UI has been built these keep
+            // working even if the user moves or renames objects in the Hierarchy.
+            if (HasRequiredChrome()) return true;
 
-            _rulerViewport = CreateViewport("RulerViewport", transform, new Color(0.13f, 0.13f, 0.13f, 1f));
-            _rulerViewport.anchorMin = new Vector2(0f, 1f);
-            _rulerViewport.anchorMax = new Vector2(1f, 1f);
-            _rulerViewport.pivot = new Vector2(0.5f, 1f);
-            _rulerViewport.offsetMin = new Vector2(LabelWidth, -RulerHeight);
-            _rulerViewport.offsetMax = Vector2.zero;
-            _rulerContent = CreateTopLeftContent("RulerContent", _rulerViewport);
+            // Migration path for scenes created by previous revisions. First try the
+            // original paths, then fall back to exact-name recursive lookup so moving a
+            // viewport into a layout container does not break runtime initialization.
+            _rulerViewport ??= transform.Find("RulerViewport") as RectTransform;
+            _rulerViewport ??= FindDescendant<RectTransform>(transform, "RulerViewport");
 
-            _labelsViewport = CreateViewport("LabelsViewport", transform, new Color(0.12f, 0.12f, 0.12f, 1f));
-            _labelsViewport.anchorMin = new Vector2(0f, 0f);
-            _labelsViewport.anchorMax = new Vector2(0f, 1f);
-            _labelsViewport.pivot = new Vector2(0f, 0.5f);
-            _labelsViewport.offsetMin = new Vector2(0f, ScrollbarHeight);
-            _labelsViewport.offsetMax = new Vector2(LabelWidth, -RulerHeight);
-            _labelsContent = CreateTopLeftContent("LabelsContent", _labelsViewport);
+            _rulerContent ??= _rulerViewport != null ? _rulerViewport.Find("RulerContent") as RectTransform : null;
+            _rulerContent ??= FindDescendant<RectTransform>(transform, "RulerContent");
 
-            _timeViewport = CreateViewport("TimeViewport", transform, new Color(0.09f, 0.09f, 0.09f, 1f));
-            _timeViewport.anchorMin = Vector2.zero;
-            _timeViewport.anchorMax = Vector2.one;
-            _timeViewport.offsetMin = new Vector2(LabelWidth, ScrollbarHeight);
-            _timeViewport.offsetMax = new Vector2(0f, -RulerHeight);
-            _timeContent = CreateTopLeftContent("TimeContent", _timeViewport);
-            BuildMarqueeSelection();
-            var marqueeInput = _timeViewport.gameObject.AddComponent<TimelineMarqueeSelectInput>();
-            marqueeInput.Initialize(this);
+            _labelsViewport ??= transform.Find("LabelsViewport") as RectTransform;
+            _labelsViewport ??= FindDescendant<RectTransform>(transform, "LabelsViewport");
 
-            var lowerLeft = UiFactory.CreateUIObject("LowerLeft", transform);
-            var lowerLeftRt = (RectTransform)lowerLeft.transform;
-            lowerLeftRt.anchorMin = new Vector2(0f, 0f);
-            lowerLeftRt.anchorMax = new Vector2(0f, 0f);
-            lowerLeftRt.pivot = Vector2.zero;
-            lowerLeftRt.anchoredPosition = Vector2.zero;
-            lowerLeftRt.sizeDelta = new Vector2(LabelWidth, ScrollbarHeight);
-            UiFactory.AddImage(lowerLeft, new Color(0.12f, 0.12f, 0.12f, 1f)).raycastTarget = false;
+            _labelsContent ??= _labelsViewport != null ? _labelsViewport.Find("LabelsContent") as RectTransform : null;
+            _labelsContent ??= FindDescendant<RectTransform>(transform, "LabelsContent");
 
-            BuildHorizontalScrollbar();
+            _timeViewport ??= transform.Find("TimeViewport") as RectTransform;
+            _timeViewport ??= FindDescendant<RectTransform>(transform, "TimeViewport");
+
+            _timeContent ??= _timeViewport != null ? _timeViewport.Find("TimeContent") as RectTransform : null;
+            _timeContent ??= FindDescendant<RectTransform>(transform, "TimeContent");
+
+            _marqueeSelection ??= _timeViewport != null ? _timeViewport.Find("MarqueeSelection") as RectTransform : null;
+            _marqueeSelection ??= FindDescendant<RectTransform>(transform, "MarqueeSelection");
+
+            if (_horizontalScrollbar == null)
+            {
+                var scrollbarTransform = FindDescendant(transform, "HorizontalScrollbar");
+                _horizontalScrollbar = scrollbarTransform != null
+                    ? scrollbarTransform.GetComponent<Scrollbar>()
+                    : GetComponentInChildren<Scrollbar>(true);
+            }
+
+            return HasRequiredChrome();
         }
 
+        private bool HasRequiredChrome()
+        {
+            return _rulerViewport != null && _rulerContent != null &&
+                   _labelsViewport != null && _labelsContent != null &&
+                   _timeViewport != null && _timeContent != null &&
+                   _marqueeSelection != null && _horizontalScrollbar != null;
+        }
+
+#if UNITY_EDITOR
+        internal void EditorBuildDefaultHierarchy(LightingScenarioApp app)
+        {
+            _app = app;
+            EnsureChrome();
+
+            if (GetComponent<TimelineWheelInput>() == null)
+                gameObject.AddComponent<TimelineWheelInput>();
+            if (GetComponent<TimelineMiddleMousePanInput>() == null)
+                gameObject.AddComponent<TimelineMiddleMousePanInput>();
+            if (_timeViewport != null && _timeViewport.GetComponent<TimelineMarqueeSelectInput>() == null)
+                _timeViewport.gameObject.AddComponent<TimelineMarqueeSelectInput>();
+        }
+
+        private bool EnsureChrome()
+        {
+            BindExistingChrome();
+
+            // Preserve an authored Timeline whenever possible. Only recreate the optional
+            // decorative header/corner when this panel has no recognizable timeline chrome.
+            var hasExistingTimelineChrome = _rulerViewport != null || _labelsViewport != null ||
+                                            _timeViewport != null || _horizontalScrollbar != null ||
+                                            FindDescendant(transform, "TimelineSectionHeader") != null ||
+                                            FindDescendant(transform, "Corner") != null;
+            if (!hasExistingTimelineChrome)
+                EnsureDecorativeChrome();
+
+            EnsureRulerHierarchy();
+            EnsureLabelsHierarchy();
+            EnsureTimeHierarchy();
+            EnsureHorizontalScrollbar();
+            EnsureTimelineDividers();
+
+            BindExistingChrome();
+            return HasRequiredChrome();
+        }
+
+        private void EnsureDecorativeChrome()
+        {
+            if (FindDescendant(transform, "TimelineSectionHeader") == null)
+            {
+                var sectionHeader = UiFactory.CreateUIObject("TimelineSectionHeader", transform);
+                var sectionHeaderRt = (RectTransform)sectionHeader.transform;
+                sectionHeaderRt.anchorMin = new Vector2(0f, 1f);
+                sectionHeaderRt.anchorMax = new Vector2(1f, 1f);
+                sectionHeaderRt.pivot = new Vector2(0.5f, 1f);
+                sectionHeaderRt.sizeDelta = new Vector2(0f, SectionHeaderHeight);
+                UiFactory.AddImage(sectionHeader, AppTheme.Panel).raycastTarget = false;
+                var title = UiFactory.CreateSectionTitle(sectionHeader.transform, "Timeline", 140f);
+                var titleRt = (RectTransform)title.transform;
+                titleRt.anchorMin = Vector2.zero;
+                titleRt.anchorMax = Vector2.one;
+                titleRt.offsetMin = new Vector2(12f, 0f);
+                titleRt.offsetMax = new Vector2(-12f, 0f);
+            }
+
+            if (FindDescendant(transform, "Corner") == null)
+            {
+                var corner = UiFactory.CreateUIObject("Corner", transform);
+                var cornerRt = (RectTransform)corner.transform;
+                cornerRt.anchorMin = cornerRt.anchorMax = new Vector2(0f, 1f);
+                cornerRt.pivot = new Vector2(0f, 1f);
+                cornerRt.anchoredPosition = new Vector2(0f, -SectionHeaderHeight);
+                cornerRt.sizeDelta = new Vector2(LabelWidth, RulerHeight);
+                UiFactory.AddImage(corner, AppTheme.Elevated);
+                var cornerTextGo = UiFactory.CreateUIObject("CornerText", corner.transform);
+                UiFactory.Stretch((RectTransform)cornerTextGo.transform);
+                var cornerText = UiFactory.AddText(cornerTextGo, "Tracks", AppTheme.SecondarySize, TextAnchor.MiddleLeft);
+                cornerText.color = AppTheme.TextSecondary;
+                cornerText.margin = new Vector4(12f, 0f, 4f, 0f);
+                cornerText.raycastTarget = false;
+            }
+
+            if (FindDescendant(transform, "LowerLeft") == null)
+            {
+                var lowerLeft = UiFactory.CreateUIObject("LowerLeft", transform);
+                var lowerLeftRt = (RectTransform)lowerLeft.transform;
+                lowerLeftRt.anchorMin = new Vector2(0f, 0f);
+                lowerLeftRt.anchorMax = new Vector2(0f, 0f);
+                lowerLeftRt.pivot = Vector2.zero;
+                lowerLeftRt.anchoredPosition = Vector2.zero;
+                lowerLeftRt.sizeDelta = new Vector2(LabelWidth, ScrollbarHeight);
+                UiFactory.AddImage(lowerLeft, AppTheme.Panel).raycastTarget = false;
+            }
+        }
+
+        private void EnsureRulerHierarchy()
+        {
+            if (_rulerViewport == null)
+                _rulerViewport = FindDescendant<RectTransform>(transform, "RulerViewport");
+            if (_rulerViewport == null)
+            {
+                _rulerViewport = CreateViewport("RulerViewport", transform, AppTheme.Elevated);
+                _rulerViewport.anchorMin = new Vector2(0f, 1f);
+                _rulerViewport.anchorMax = new Vector2(1f, 1f);
+                _rulerViewport.pivot = new Vector2(0.5f, 1f);
+                _rulerViewport.offsetMin = new Vector2(LabelWidth, -(SectionHeaderHeight + RulerHeight));
+                _rulerViewport.offsetMax = new Vector2(0f, -SectionHeaderHeight);
+            }
+            EnsureViewportComponents(_rulerViewport, AppTheme.Elevated);
+
+            if (_rulerContent == null)
+                _rulerContent = FindDescendant<RectTransform>(_rulerViewport, "RulerContent");
+            if (_rulerContent == null)
+                _rulerContent = CreateTopLeftContent("RulerContent", _rulerViewport);
+        }
+
+        private void EnsureLabelsHierarchy()
+        {
+            if (_labelsViewport == null)
+                _labelsViewport = FindDescendant<RectTransform>(transform, "LabelsViewport");
+            if (_labelsViewport == null)
+            {
+                _labelsViewport = CreateViewport("LabelsViewport", transform, AppTheme.Panel);
+                _labelsViewport.anchorMin = new Vector2(0f, 0f);
+                _labelsViewport.anchorMax = new Vector2(0f, 1f);
+                _labelsViewport.pivot = new Vector2(0f, 0.5f);
+                _labelsViewport.offsetMin = new Vector2(0f, ScrollbarHeight);
+                _labelsViewport.offsetMax = new Vector2(LabelWidth, -(SectionHeaderHeight + RulerHeight));
+            }
+            EnsureViewportComponents(_labelsViewport, AppTheme.Panel);
+
+            if (_labelsContent == null)
+                _labelsContent = FindDescendant<RectTransform>(_labelsViewport, "LabelsContent");
+            if (_labelsContent == null)
+                _labelsContent = CreateTopLeftContent("LabelsContent", _labelsViewport);
+        }
+
+        private void EnsureTimeHierarchy()
+        {
+            if (_timeViewport == null)
+                _timeViewport = FindDescendant<RectTransform>(transform, "TimeViewport");
+            if (_timeViewport == null)
+            {
+                _timeViewport = CreateViewport("TimeViewport", transform, AppTheme.TrackEven);
+                _timeViewport.anchorMin = Vector2.zero;
+                _timeViewport.anchorMax = Vector2.one;
+                _timeViewport.offsetMin = new Vector2(LabelWidth, ScrollbarHeight);
+                _timeViewport.offsetMax = new Vector2(0f, -(SectionHeaderHeight + RulerHeight));
+            }
+            EnsureViewportComponents(_timeViewport, AppTheme.TrackEven);
+
+            if (_timeContent == null)
+                _timeContent = FindDescendant<RectTransform>(_timeViewport, "TimeContent");
+            if (_timeContent == null)
+                _timeContent = CreateTopLeftContent("TimeContent", _timeViewport);
+
+            if (_marqueeSelection == null)
+                _marqueeSelection = FindDescendant<RectTransform>(_timeViewport, "MarqueeSelection");
+            if (_marqueeSelection == null)
+                BuildMarqueeSelection();
+            else
+                EnsureMarqueeVisual();
+        }
+
+        private static void EnsureViewportComponents(RectTransform viewport, Color defaultColor)
+        {
+            if (viewport == null) return;
+            var image = viewport.GetComponent<Image>() ?? UiFactory.AddImage(viewport.gameObject, defaultColor);
+            image.raycastTarget = true;
+            if (viewport.GetComponent<RectMask2D>() == null)
+                viewport.gameObject.AddComponent<RectMask2D>();
+        }
+
+        private void EnsureMarqueeVisual()
+        {
+            if (_marqueeSelection == null) return;
+            var image = _marqueeSelection.GetComponent<Image>() ??
+                        UiFactory.AddImage(_marqueeSelection.gameObject,
+                            new Color(AppTheme.Accent.r, AppTheme.Accent.g, AppTheme.Accent.b, 0.16f));
+            image.raycastTarget = false;
+            var outline = _marqueeSelection.GetComponent<Outline>() ?? _marqueeSelection.gameObject.AddComponent<Outline>();
+            outline.effectColor = AppTheme.Accent;
+            outline.effectDistance = new Vector2(1f, 1f);
+        }
+
+        private void EnsureHorizontalScrollbar()
+        {
+            if (_horizontalScrollbar == null)
+            {
+                var existing = FindDescendant(transform, "HorizontalScrollbar");
+                if (existing != null)
+                    _horizontalScrollbar = existing.GetComponent<Scrollbar>() ?? existing.gameObject.AddComponent<Scrollbar>();
+            }
+
+            if (_horizontalScrollbar == null)
+            {
+                BuildHorizontalScrollbar();
+                return;
+            }
+
+            var scrollbarGo = _horizontalScrollbar.gameObject;
+            var background = scrollbarGo.GetComponent<Image>() ?? UiFactory.AddImage(scrollbarGo, AppTheme.Background);
+            background.raycastTarget = true;
+
+            var slidingArea = scrollbarGo.transform.Find("Sliding Area") as RectTransform;
+            if (slidingArea == null)
+            {
+                var slidingAreaGo = UiFactory.CreateUIObject("Sliding Area", scrollbarGo.transform);
+                slidingArea = (RectTransform)slidingAreaGo.transform;
+                UiFactory.Stretch(slidingArea);
+                slidingArea.offsetMin = new Vector2(1f, 2f);
+                slidingArea.offsetMax = new Vector2(-1f, -2f);
+            }
+
+            var handle = slidingArea.Find("Handle") as RectTransform;
+            if (handle == null)
+            {
+                var handleGo = UiFactory.CreateUIObject("Handle", slidingArea);
+                handle = (RectTransform)handleGo.transform;
+                UiFactory.Stretch(handle);
+            }
+
+            var handleImage = handle.GetComponent<Image>() ?? UiFactory.AddImage(handle.gameObject, AppTheme.TextSecondary);
+            _horizontalScrollbar.direction = Scrollbar.Direction.LeftToRight;
+            _horizontalScrollbar.targetGraphic = handleImage;
+            _horizontalScrollbar.handleRect = handle;
+        }
+
+        private void EnsureTimelineDividers()
+        {
+            EnsureHorizontalDivider("HeaderDivider", SectionHeaderHeight);
+            EnsureHorizontalDivider("RulerDivider", SectionHeaderHeight + RulerHeight);
+            EnsureHorizontalDividerFromBottom("ScrollbarDivider", ScrollbarHeight);
+
+            var vertical = FindDescendant<RectTransform>(transform, "TrackColumnDivider");
+            if (vertical == null)
+            {
+                var go = UiFactory.CreateUIObject("TrackColumnDivider", transform);
+                vertical = (RectTransform)go.transform;
+                UiFactory.AddImage(go, AppTheme.Divider).raycastTarget = false;
+            }
+
+            vertical.anchorMin = new Vector2(0f, 0f);
+            vertical.anchorMax = new Vector2(0f, 1f);
+            vertical.pivot = new Vector2(0.5f, 0.5f);
+            vertical.offsetMin = new Vector2(LabelWidth - 0.5f, ScrollbarHeight);
+            vertical.offsetMax = new Vector2(LabelWidth + 0.5f, -SectionHeaderHeight);
+            vertical.SetAsLastSibling();
+        }
+
+        private void EnsureHorizontalDivider(string name, float yFromTop)
+        {
+            var line = FindDescendant<RectTransform>(transform, name);
+            if (line == null)
+            {
+                var go = UiFactory.CreateUIObject(name, transform);
+                line = (RectTransform)go.transform;
+                UiFactory.AddImage(go, AppTheme.Divider).raycastTarget = false;
+            }
+
+            line.anchorMin = new Vector2(0f, 1f);
+            line.anchorMax = new Vector2(1f, 1f);
+            line.pivot = new Vector2(0.5f, 0.5f);
+            line.anchoredPosition = new Vector2(0f, -yFromTop);
+            line.sizeDelta = new Vector2(0f, 1f);
+            line.SetAsLastSibling();
+        }
+
+        private void EnsureHorizontalDividerFromBottom(string name, float yFromBottom)
+        {
+            var line = FindDescendant<RectTransform>(transform, name);
+            if (line == null)
+            {
+                var go = UiFactory.CreateUIObject(name, transform);
+                line = (RectTransform)go.transform;
+                UiFactory.AddImage(go, AppTheme.Divider).raycastTarget = false;
+            }
+
+            line.anchorMin = new Vector2(0f, 0f);
+            line.anchorMax = new Vector2(1f, 0f);
+            line.pivot = new Vector2(0.5f, 0.5f);
+            line.anchoredPosition = new Vector2(0f, yFromBottom);
+            line.sizeDelta = new Vector2(0f, 1f);
+            line.SetAsLastSibling();
+        }
+
+#endif
+
+        private static Transform FindDescendant(Transform root, string exactName)
+        {
+            if (root == null) return null;
+            foreach (var child in root.GetComponentsInChildren<Transform>(true))
+            {
+                if (child != root && child.name == exactName) return child;
+            }
+            return null;
+        }
+
+        private static T FindDescendant<T>(Transform root, string exactName) where T : Component
+        {
+            var t = FindDescendant(root, exactName);
+            return t != null ? t.GetComponent<T>() : null;
+        }
+
+
+#if UNITY_EDITOR
         private static RectTransform CreateViewport(string name, Transform parent, Color color)
         {
             var go = UiFactory.CreateUIObject(name, parent);
@@ -130,13 +452,14 @@ namespace LightingScenarioTool
             _marqueeSelection.anchoredPosition = Vector2.zero;
             _marqueeSelection.sizeDelta = Vector2.zero;
 
-            var image = UiFactory.AddImage(go, new Color(0.25f, 0.55f, 1f, 0.16f));
+            var image = UiFactory.AddImage(go, new Color(AppTheme.Accent.r, AppTheme.Accent.g, AppTheme.Accent.b, 0.16f));
             image.raycastTarget = false;
             var outline = go.AddComponent<Outline>();
-            outline.effectColor = new Color(0.45f, 0.72f, 1f, 0.95f);
+            outline.effectColor = AppTheme.Accent;
             outline.effectDistance = new Vector2(1f, 1f);
             go.SetActive(false);
         }
+#endif
 
         internal void BeginMarqueeSelection(Vector2 startScreen, Camera eventCamera)
         {
@@ -209,45 +532,57 @@ namespace LightingScenarioTool
             if (_marqueeSelection != null) _marqueeSelection.gameObject.SetActive(false);
         }
 
+#if UNITY_EDITOR
         private void BuildHorizontalScrollbar()
         {
             var go = UiFactory.CreateUIObject("HorizontalScrollbar", transform);
             var rt = (RectTransform)go.transform;
-            // Fixed 12 px high bar. Using explicit bottom offsets avoids the previous
-            // stretched-height behavior on some resolutions / CanvasScaler factors.
             rt.anchorMin = new Vector2(0f, 0f);
             rt.anchorMax = new Vector2(1f, 0f);
             rt.pivot = new Vector2(0.5f, 0f);
-            rt.offsetMin = new Vector2(LabelWidth + 2f, 1f);
-            rt.offsetMax = new Vector2(-2f, ScrollbarHeight - 1f);
+            rt.offsetMin = new Vector2(LabelWidth + 4f, 1f);
+            rt.offsetMax = new Vector2(-4f, ScrollbarHeight - 1f);
 
-            var background = UiFactory.AddImage(go, new Color(0.10f, 0.10f, 0.10f, 1f));
+            var background = UiFactory.AddImage(go, AppTheme.Background);
             var slidingArea = UiFactory.CreateUIObject("Sliding Area", go.transform);
             var slidingRt = (RectTransform)slidingArea.transform;
             UiFactory.Stretch(slidingRt);
-            slidingRt.offsetMin = new Vector2(2f, 2f);
-            slidingRt.offsetMax = new Vector2(-2f, -2f);
+            slidingRt.offsetMin = new Vector2(1f, 2f);
+            slidingRt.offsetMax = new Vector2(-1f, -2f);
 
             var handleGo = UiFactory.CreateUIObject("Handle", slidingArea.transform);
             var handleRt = (RectTransform)handleGo.transform;
-            // A newly-created RectTransform starts with a 100x100 sizeDelta.
-            // Setting only the anchors to (0,0)-(1,1) leaves that sizeDelta in place,
-            // which makes the Scrollbar handle about 100 px too tall/wide.
-            // Stretch() also resets offsetMin/offsetMax, so the handle is constrained
-            // exactly to the sliding area's height.
             UiFactory.Stretch(handleRt);
-            var handleImage = UiFactory.AddImage(handleGo, new Color(0.42f, 0.42f, 0.42f, 1f));
+            var handleImage = UiFactory.AddImage(handleGo, AppTheme.TextSecondary);
 
             _horizontalScrollbar = go.AddComponent<Scrollbar>();
             _horizontalScrollbar.direction = Scrollbar.Direction.LeftToRight;
             _horizontalScrollbar.targetGraphic = handleImage;
             _horizontalScrollbar.handleRect = handleRt;
-            _horizontalScrollbar.onValueChanged.AddListener(OnHorizontalScrollbarChanged);
+            _horizontalScrollbar.colors = new ColorBlock
+            {
+                normalColor = AppTheme.TextSecondary,
+                highlightedColor = AppTheme.TextPrimary,
+                pressedColor = AppTheme.Accent,
+                selectedColor = AppTheme.TextPrimary,
+                disabledColor = AppTheme.TextDisabled,
+                colorMultiplier = 1f,
+                fadeDuration = 0.08f
+            };
             background.raycastTarget = true;
         }
+#endif
 
         public void Rebuild()
         {
+            if (!HasRequiredChrome())
+            {
+                Debug.LogError(
+                    "Timeline hierarchy is incomplete. " +
+                    "Regenerate the UI from Tools > Lighting Scenario > Build Complete UI In Current Scene.", this);
+                return;
+            }
+
             ClearChildren(_rulerContent);
             ClearChildren(_labelsContent);
             ClearChildren(_timeContent);
@@ -256,10 +591,11 @@ namespace LightingScenarioTool
             _trackLabelBaseColors.Clear();
             _trackTimeImages.Clear();
             _trackTimeBaseColors.Clear();
+            _trackAccentLines.Clear();
 
             var duration = Mathf.Max(0.001f, _app.Document.Data.metadata.duration);
             var pps = _app.Document.Data.editorSettings.pixelsPerSecond;
-            _timeContentWidth = duration * pps + 60f;
+            _timeContentWidth = TimelineCoordinates.ContentWidth(duration, pps);
             _rowsContentHeight = Mathf.Max(1, _app.Document.Data.lightingUnits.Count) * RowHeight;
             _rulerContent.sizeDelta = new Vector2(_timeContentWidth, RulerHeight);
             _labelsContent.sizeDelta = new Vector2(LabelWidth, _rowsContentHeight);
@@ -268,7 +604,6 @@ namespace LightingScenarioTool
             BuildRuler();
             for (var i = 0; i < _app.Document.Data.lightingUnits.Count; i++)
                 BuildTrackRow(_app.Document.Data.lightingUnits[i], i);
-            BuildHorizontalTrackSeparators();
             BuildPlayhead();
 
             Canvas.ForceUpdateCanvases();
@@ -283,42 +618,38 @@ namespace LightingScenarioTool
         {
             if (parent == null) return;
             for (var i = parent.childCount - 1; i >= 0; i--)
-                Object.Destroy(parent.GetChild(i).gameObject);
+            {
+                var child = parent.GetChild(i).gameObject;
+                child.SetActive(false);
+                Object.Destroy(child);
+            }
         }
 
         private void BuildRuler()
         {
-            var interactionGo = UiFactory.CreateUIObject("RulerInteraction", _rulerContent);
+            var interactionGo = Instantiate(_app.UiPrefabs.RulerInteractionPrefab, _rulerContent);
+            interactionGo.name = "RulerInteraction";
             var interactionRt = (RectTransform)interactionGo.transform;
-            interactionRt.anchorMin = interactionRt.anchorMax = new Vector2(0f, 1f);
-            interactionRt.pivot = new Vector2(0f, 1f);
             interactionRt.sizeDelta = new Vector2(_timeContentWidth, RulerHeight);
-            UiFactory.AddImage(interactionGo, new Color(0f, 0f, 0f, 0f)).raycastTarget = true;
-            interactionGo.AddComponent<TimelineRulerInput>().Initialize(_app, interactionRt);
+            var rulerInput = interactionGo.GetComponent<TimelineRulerInput>();
+            if (rulerInput != null) rulerInput.Initialize(_app, interactionRt);
 
             var pps = Mathf.Max(0.001f, _app.Document.Data.editorSettings.pixelsPerSecond);
             var duration = Mathf.Max(0f, _app.Document.Data.metadata.duration);
             var interval = GetMajorTickInterval(pps);
+            var ticks = interactionGo.GetComponentInChildren<TimelineRulerTicksGraphic>(true);
+            if (ticks != null) ticks.Configure(duration, pps, interval);
+
             var count = Mathf.CeilToInt(duration / interval);
             for (var i = 0; i <= count; i++)
             {
                 var time = Mathf.Min(duration, i * interval);
-                var x = time * pps;
-                var tickGo = UiFactory.CreateUIObject("Tick_" + i, _rulerContent);
-                var tickRt = (RectTransform)tickGo.transform;
-                tickRt.anchorMin = tickRt.anchorMax = new Vector2(0f, 0f);
-                tickRt.pivot = new Vector2(0.5f, 0f);
-                tickRt.anchoredPosition = new Vector2(x, 0f);
-                tickRt.sizeDelta = new Vector2(1f, 13f);
-                UiFactory.AddImage(tickGo, new Color(0.55f, 0.55f, 0.55f, 1f)).raycastTarget = false;
-
-                var textGo = UiFactory.CreateUIObject("TickLabel_" + i, _rulerContent);
-                var textRt = (RectTransform)textGo.transform;
-                textRt.anchorMin = textRt.anchorMax = new Vector2(0f, 1f);
-                textRt.pivot = new Vector2(0.5f, 1f);
+                var x = TimelineCoordinates.TimeToX(time, pps);
+                var tickLabel = Instantiate(_app.UiPrefabs.RulerLabelPrefab, _rulerContent);
+                tickLabel.gameObject.name = "TickLabel_" + i;
+                var textRt = (RectTransform)tickLabel.transform;
                 textRt.anchoredPosition = new Vector2(x, -2f);
-                textRt.sizeDelta = new Vector2(78f, 20f);
-                UiFactory.AddText(textGo, FormatTickTime(time, interval), 11, TextAnchor.MiddleCenter).raycastTarget = false;
+                tickLabel.text = FormatTickTime(time, interval);
 
                 if (time >= duration - 0.0001f) break;
             }
@@ -349,253 +680,220 @@ namespace LightingScenarioTool
 
         private void BuildTrackLabel(LightingUnitData unit, int index)
         {
-            var rowGo = UiFactory.CreateUIObject("Label_" + unit.unitId, _labelsContent);
+            var rowGo = Instantiate(_app.UiPrefabs.TrackLabelPrefab, _labelsContent);
+            rowGo.name = "Label_" + unit.unitId;
+            rowGo.SetActive(true);
             var rowRt = (RectTransform)rowGo.transform;
-            rowRt.anchorMin = rowRt.anchorMax = new Vector2(0f, 1f);
-            rowRt.pivot = new Vector2(0f, 1f);
             rowRt.anchoredPosition = new Vector2(0f, -index * RowHeight);
             rowRt.sizeDelta = new Vector2(LabelWidth, RowHeight);
 
             var selected = unit.unitId == _app.SelectedUnitId;
-            var baseColor = index % 2 == 0
-                ? new Color(0.15f, 0.15f, 0.15f, 1f)
-                : new Color(0.17f, 0.17f, 0.17f, 1f);
-            var rowImage = UiFactory.AddImage(rowGo,
-                selected ? new Color(0.24f, 0.24f, 0.16f, 1f) : baseColor);
+            var baseColor = index % 2 == 0 ? AppTheme.TrackHeaderEven : AppTheme.TrackHeaderOdd;
+            var rowImage = rowGo.GetComponent<Image>();
+            rowImage.color = selected ? AppTheme.AccentTint : baseColor;
             _trackLabelImages[unit.unitId] = rowImage;
             _trackLabelBaseColors[unit.unitId] = baseColor;
-            rowGo.AddComponent<TrackLabelClick>().Initialize(_app, unit.unitId);
+            ConfigureRowSeparator(rowGo.transform);
+            var click = rowGo.GetComponent<TrackLabelClick>();
+            click.Initialize(_app, unit.unitId);
 
-            var nameInput = UiFactory.CreateInput(rowGo.transform, unit.displayName, 80f);
-            nameInput.gameObject.name = "TrackNameInput";
-            var nameRt = (RectTransform)nameInput.transform;
-            nameRt.anchorMin = nameRt.anchorMax = new Vector2(0f, 0.5f);
-            nameRt.pivot = new Vector2(0f, 0.5f);
-            nameRt.anchoredPosition = new Vector2(8f, 8f);
-            nameRt.sizeDelta = new Vector2(80f, 22f);
-            var nameLayout = nameInput.GetComponent<LayoutElement>();
-            if (nameLayout != null) nameLayout.preferredHeight = 22f;
-            if (nameInput.textComponent != null) nameInput.textComponent.fontSize = 12f;
-            var capturedUnitId = unit.unitId;
-            nameInput.onEndEdit.AddListener(value => _app.SetUnitName(capturedUnitId, value));
+            var accent = rowGo.transform.Find("SelectionAccent");
+            var accentImage = accent != null ? accent.GetComponent<Image>() : null;
+            if (accentImage != null)
+            {
+                accentImage.gameObject.SetActive(selected);
+                _trackAccentLines[unit.unitId] = accentImage;
+            }
 
-            CreateMiniToggle(rowGo.transform, "L", unit.track.locked, new Vector2(92f, 8f))
-                .onValueChanged.AddListener(v => _app.SetTrackLocked(unit.unitId, v));
-            CreateMiniToggle(rowGo.transform, "M", unit.track.muted, new Vector2(126f, 8f))
-                .onValueChanged.AddListener(v => _app.SetTrackMuted(unit.unitId, v));
-            CreateMiniButton(rowGo.transform, "▲", new Vector2(162f, 8f))
-                .onClick.AddListener(() => _app.MoveTrack(unit.unitId, -1));
-            CreateMiniButton(rowGo.transform, "▼", new Vector2(196f, 8f))
-                .onClick.AddListener(() => _app.MoveTrack(unit.unitId, 1));
+            var nameTransform = rowGo.transform.Find("TrackNameInput");
+            var nameInput = nameTransform != null ? nameTransform.GetComponent<TMP_InputField>() : null;
+            if (nameInput != null)
+            {
+                nameInput.SetTextWithoutNotify(unit.displayName);
+                var capturedUnitId = unit.unitId;
+                nameInput.onEndEdit.AddListener(value => _app.SetUnitName(capturedUnitId, value));
+            }
 
+            var lockToggle = rowGo.transform.Find("Toggle_Lock")?.GetComponent<Toggle>();
+            if (lockToggle != null)
+            {
+                lockToggle.SetIsOnWithoutNotify(unit.track.locked);
+                lockToggle.onValueChanged.AddListener(v => _app.SetTrackLocked(unit.unitId, v));
+            }
+            var muteToggle = rowGo.transform.Find("Toggle_Mute")?.GetComponent<Toggle>();
+            if (muteToggle != null)
+            {
+                muteToggle.SetIsOnWithoutNotify(unit.track.muted);
+                muteToggle.onValueChanged.AddListener(v => _app.SetTrackMuted(unit.unitId, v));
+            }
+            var upButton = rowGo.transform.Find("Button_▲")?.GetComponent<Button>();
+            if (upButton != null)
+            {
+                upButton.onClick.AddListener(() => _app.MoveTrack(unit.unitId, -1));
+            }
+            var downButton = rowGo.transform.Find("Button_▼")?.GetComponent<Button>();
+            if (downButton != null)
+            {
+                downButton.onClick.AddListener(() => _app.MoveTrack(unit.unitId, 1));
+            }
         }
 
         private void BuildTrackTimeArea(LightingUnitData unit, int index)
         {
-            var rowGo = UiFactory.CreateUIObject("Track_" + unit.unitId, _timeContent);
+            var rowGo = Instantiate(_app.UiPrefabs.TrackTimePrefab, _timeContent);
+            rowGo.name = "Track_" + unit.unitId;
+            rowGo.SetActive(true);
             var rowRt = (RectTransform)rowGo.transform;
-            rowRt.anchorMin = rowRt.anchorMax = new Vector2(0f, 1f);
-            rowRt.pivot = new Vector2(0f, 1f);
             rowRt.anchoredPosition = new Vector2(0f, -index * RowHeight);
             rowRt.sizeDelta = new Vector2(_timeContentWidth, RowHeight);
-            var timeBaseColor = index % 2 == 0
-                ? new Color(0.105f, 0.105f, 0.105f, 1f)
-                : new Color(0.12f, 0.12f, 0.12f, 1f);
-            var timeImage = UiFactory.AddImage(rowGo,
-                unit.unitId == _app.SelectedUnitId
-                    ? new Color(0.145f, 0.145f, 0.105f, 1f)
-                    : timeBaseColor);
+            var timeBaseColor = index % 2 == 0 ? AppTheme.TrackEven : AppTheme.TrackOdd;
+            var timeImage = rowGo.GetComponent<Image>();
+            timeImage.color = unit.unitId == _app.SelectedUnitId ? AppTheme.AccentTintSoft : timeBaseColor;
             timeImage.raycastTarget = false;
             _trackTimeImages[unit.unitId] = timeImage;
             _trackTimeBaseColors[unit.unitId] = timeBaseColor;
 
-            BuildGridLines(rowGo.transform);
+            var pps = Mathf.Max(0.001f, _app.Document.Data.editorSettings.pixelsPerSecond);
+            var duration = Mathf.Max(0f, _app.Document.Data.metadata.duration);
+            var interval = GetMajorTickInterval(pps);
+            var gridRect = rowGo.transform.Find("GridGraphic") as RectTransform;
+            var grid = gridRect != null ? gridRect.GetComponent<TimelineTrackGridGraphic>() : null;
+            if (gridRect == null || grid == null)
+            {
+                Debug.LogError(
+                    "TimelineTrackTime prefab requires GridGraphic with TimelineTrackGridGraphic. " +
+                    "Run Tools > Lighting Scenario > Build Complete UI In Current Scene to regenerate the prefab.",
+                    rowGo);
+                return;
+            }
 
-            var lane = CreateLane("ColorKeyframeLane", rowGo.transform, 5f, LaneHeight,
-                new Color(0.12f, 0.12f, 0.12f, 0.22f));
+            // Keep the procedural grid exactly aligned to the instantiated row. The prefab is
+            // authored at a nominal width, while runtime timeline width changes with duration/zoom.
+            gridRect.anchorMin = Vector2.zero;
+            gridRect.anchorMax = Vector2.one;
+            gridRect.offsetMin = Vector2.zero;
+            gridRect.offsetMax = Vector2.zero;
+            gridRect.SetAsFirstSibling();
+            grid.Configure(duration, pps, interval);
+
+            ConfigureRowSeparator(rowGo.transform);
+
+            var lane = rowGo.transform.Find("ColorKeyframeLane") as RectTransform;
+            if (lane == null)
+            {
+                Debug.LogError("TimelineTrackTime prefab requires a ColorKeyframeLane child.", rowGo);
+                return;
+            }
             lane.sizeDelta = new Vector2(_timeContentWidth, LaneHeight);
-            lane.gameObject.AddComponent<TrackColorInput>().Initialize(_app, unit.unitId, lane);
-            BuildColorSegments(lane, unit);
+            var input = lane.GetComponent<TrackColorInput>();
+            if (input == null)
+            {
+                Debug.LogError("TimelineTrackTime prefab requires TrackColorInput on ColorKeyframeLane.", rowGo);
+                return;
+            }
+            input.Initialize(_app, unit.unitId, lane);
+
+            var gradientRect = lane.Find("ColorGradient") as RectTransform;
+            if (gradientRect == null)
+            {
+                Debug.LogError(
+                    "TimelineTrackTime prefab requires a ColorGradient child under ColorKeyframeLane. " +
+                    "Run Tools > Lighting Scenario > Build Complete UI In Current Scene to regenerate the prefab.",
+                    rowGo);
+                return;
+            }
+
+            gradientRect.sizeDelta = new Vector2(_timeContentWidth, 5f);
+            gradientRect.SetAsFirstSibling();
+            var gradient = gradientRect.GetComponent<TimelineColorGradientGraphic>();
+            if (gradient == null)
+            {
+                Debug.LogError(
+                    "ColorGradient requires TimelineColorGradientGraphic. " +
+                    "Run Tools > Lighting Scenario > Build Complete UI In Current Scene to regenerate the prefab.",
+                    gradientRect);
+                return;
+            }
+            gradient.Configure(unit.track.colorKeyframes, pps);
 
             foreach (var keyframe in unit.track.colorKeyframes)
             {
-                var keyGo = UiFactory.CreateUIObject("ColorKeyframe_" + keyframe.keyframeId, lane);
-                var view = keyGo.AddComponent<ColorKeyframeView>();
+                var view = Instantiate(_app.UiPrefabs.ColorKeyframePrefab, lane);
+                view.gameObject.name = "ColorKeyframe_" + keyframe.keyframeId;
+                view.gameObject.SetActive(true);
                 view.Initialize(_app, unit.unitId, keyframe.keyframeId);
                 _keyframeViews[keyframe.keyframeId] = view;
             }
         }
 
-        private void BuildColorSegments(RectTransform lane, LightingUnitData unit)
+        private static void ConfigureRowSeparator(Transform row)
         {
-            if (lane == null || unit?.track?.colorKeyframes == null || unit.track.colorKeyframes.Count < 2) return;
-            var pps = _app.Document.Data.editorSettings.pixelsPerSecond;
-            for (var i = 0; i < unit.track.colorKeyframes.Count - 1; i++)
+            var separator = row != null ? row.Find("BottomSeparator") as RectTransform : null;
+            if (separator == null) return;
+
+            separator.anchorMin = new Vector2(0f, 0f);
+            separator.anchorMax = new Vector2(1f, 0f);
+            separator.pivot = new Vector2(0.5f, 0f);
+            separator.anchoredPosition = Vector2.zero;
+            separator.sizeDelta = new Vector2(0f, 1f);
+            separator.SetAsLastSibling();
+
+            var image = separator.GetComponent<Image>();
+            if (image != null)
             {
-                var a = unit.track.colorKeyframes[i];
-                var b = unit.track.colorKeyframes[i + 1];
-                var x0 = a.time * pps;
-                var width = Mathf.Max(1f, (b.time - a.time) * pps);
-                var pieces = Mathf.Clamp(Mathf.CeilToInt(width / 10f), 1, 64);
-                for (var piece = 0; piece < pieces; piece++)
-                {
-                    var t0 = piece / (float)pieces;
-                    var t1 = (piece + 1) / (float)pieces;
-                    var go = UiFactory.CreateUIObject("ColorSegment_" + i + "_" + piece, lane);
-                    var rt = (RectTransform)go.transform;
-                    rt.anchorMin = rt.anchorMax = new Vector2(0f, 0.5f);
-                    rt.pivot = new Vector2(0f, 0.5f);
-                    rt.anchoredPosition = new Vector2(x0 + width * t0, 0f);
-                    rt.sizeDelta = new Vector2(Mathf.Max(1.5f, width * (t1 - t0) + 0.5f), 5f);
-                    var color = Color.Lerp(a.color.ToUnityColor(), b.color.ToUnityColor(), (t0 + t1) * 0.5f);
-                    UiFactory.AddImage(go, color).raycastTarget = false;
-                }
+                image.color = AppTheme.Divider;
+                image.raycastTarget = false;
+                image.enabled = true;
             }
-        }
-
-        private static RectTransform CreateLane(string name, Transform parent, float yFromTop, float height, Color color)
-        {
-            var go = UiFactory.CreateUIObject(name, parent);
-            var rt = (RectTransform)go.transform;
-            rt.anchorMin = rt.anchorMax = new Vector2(0f, 1f);
-            rt.pivot = new Vector2(0f, 1f);
-            rt.anchoredPosition = new Vector2(0f, -yFromTop);
-            rt.sizeDelta = new Vector2(((RectTransform)parent).rect.width, height);
-            var image = UiFactory.AddImage(go, color);
-            image.raycastTarget = true;
-            return rt;
-        }
-
-        private void BuildGridLines(Transform row)
-        {
-            var pps = Mathf.Max(0.001f, _app.Document.Data.editorSettings.pixelsPerSecond);
-            var duration = Mathf.Max(0f, _app.Document.Data.metadata.duration);
-            var interval = GetMajorTickInterval(pps);
-            var count = Mathf.CeilToInt(duration / interval);
-            for (var i = 0; i <= count; i++)
-            {
-                var time = Mathf.Min(duration, i * interval);
-                var lineGo = UiFactory.CreateUIObject("Grid_" + i, row);
-                var lineRt = (RectTransform)lineGo.transform;
-                lineRt.anchorMin = lineRt.anchorMax = new Vector2(0f, 1f);
-                lineRt.pivot = new Vector2(0.5f, 1f);
-                lineRt.anchoredPosition = new Vector2(time * pps, 0f);
-                lineRt.sizeDelta = new Vector2(1f, RowHeight);
-                UiFactory.AddImage(lineGo, new Color(0.29f, 0.29f, 0.29f, 0.62f)).raycastTarget = false;
-                if (time >= duration - 0.0001f) break;
-            }
-        }
-
-        private void BuildHorizontalTrackSeparators()
-        {
-            var count = _app.Document.Data.lightingUnits.Count;
-            for (var row = 0; row < count; row++)
-            {
-                var boundaryY = -((row + 1) * RowHeight) + 0.5f;
-                AddHorizontalSeparator(_labelsContent, LabelWidth, boundaryY, "LabelRowSeparator_" + (row + 1));
-                AddHorizontalSeparator(_timeContent, _timeContentWidth, boundaryY, "TimeRowSeparator_" + (row + 1));
-            }
-        }
-
-        private static void AddHorizontalSeparator(Transform parent, float width, float y, string name)
-        {
-            var lineGo = UiFactory.CreateUIObject(name, parent);
-            var lineRt = (RectTransform)lineGo.transform;
-            lineRt.anchorMin = lineRt.anchorMax = new Vector2(0f, 1f);
-            lineRt.pivot = new Vector2(0f, 0.5f);
-            lineRt.anchoredPosition = new Vector2(0f, y);
-            lineRt.sizeDelta = new Vector2(width, 1f);
-            UiFactory.AddImage(lineGo, new Color(0.38f, 0.38f, 0.38f, 1f)).raycastTarget = false;
-            lineGo.transform.SetAsLastSibling();
-        }
-
-        private Toggle CreateMiniToggle(Transform parent, string text, bool value, Vector2 pos)
-        {
-            var root = UiFactory.CreateUIObject("Toggle_" + text, parent);
-            var rt = (RectTransform)root.transform;
-            rt.anchorMin = rt.anchorMax = new Vector2(0f, 0.5f);
-            rt.pivot = new Vector2(0f, 0.5f);
-            rt.anchoredPosition = pos;
-            rt.sizeDelta = new Vector2(28f, 24f);
-            var bg = UiFactory.AddImage(root, new Color(0.22f, 0.22f, 0.22f, 1f));
-            var check = UiFactory.CreateUIObject("Check", root.transform);
-            var crt = (RectTransform)check.transform;
-            UiFactory.Stretch(crt);
-            crt.offsetMin = new Vector2(3f, 3f);
-            crt.offsetMax = new Vector2(-3f, -3f);
-            var checkImage = UiFactory.AddImage(check, new Color(0.55f, 0.55f, 0.2f, 0.8f));
-            var txtGo = UiFactory.CreateUIObject("Text", root.transform);
-            UiFactory.Stretch((RectTransform)txtGo.transform);
-            UiFactory.AddText(txtGo, text, 11, TextAnchor.MiddleCenter).raycastTarget = false;
-            var toggle = root.AddComponent<Toggle>();
-            toggle.targetGraphic = bg;
-            toggle.graphic = checkImage;
-            toggle.isOn = value;
-            return toggle;
-        }
-
-        private Button CreateMiniButton(Transform parent, string text, Vector2 pos)
-        {
-            var go = UiFactory.CreateUIObject("Button_" + text, parent);
-            var rt = (RectTransform)go.transform;
-            rt.anchorMin = rt.anchorMax = new Vector2(0f, 0.5f);
-            rt.pivot = new Vector2(0f, 0.5f);
-            rt.anchoredPosition = pos;
-            rt.sizeDelta = new Vector2(28f, 24f);
-            UiFactory.AddImage(go, new Color(0.22f, 0.22f, 0.22f, 1f));
-            var button = go.AddComponent<Button>();
-            var txtGo = UiFactory.CreateUIObject("Text", go.transform);
-            UiFactory.Stretch((RectTransform)txtGo.transform);
-            UiFactory.AddText(txtGo, text, 11, TextAnchor.MiddleCenter).raycastTarget = false;
-            return button;
         }
 
         private void BuildPlayhead()
         {
-            var bodyGo = UiFactory.CreateUIObject("Playhead", _timeContent);
+            var bodyGo = Instantiate(_app.UiPrefabs.TimePlayheadPrefab, _timeContent);
+            bodyGo.name = "Playhead";
             _playhead = (RectTransform)bodyGo.transform;
-            _playhead.anchorMin = _playhead.anchorMax = new Vector2(0f, 1f);
-            _playhead.pivot = new Vector2(0.5f, 1f);
             _playhead.sizeDelta = new Vector2(12f, _rowsContentHeight);
-            UiFactory.AddImage(bodyGo, new Color(0f, 0f, 0f, 0f)).raycastTarget = true;
-            bodyGo.AddComponent<PlayheadDragInput>().Initialize(_app, _timeContent);
-            var bodyLine = UiFactory.CreateUIObject("Line", bodyGo.transform);
-            var bodyLineRt = (RectTransform)bodyLine.transform;
-            bodyLineRt.anchorMin = new Vector2(0.5f, 0f);
-            bodyLineRt.anchorMax = new Vector2(0.5f, 1f);
-            bodyLineRt.pivot = new Vector2(0.5f, 0.5f);
-            bodyLineRt.sizeDelta = new Vector2(2f, 0f);
-            UiFactory.AddImage(bodyLine, new Color(1f, 0.3f, 0.25f, 1f)).raycastTarget = false;
+            // The playhead line in the timeline body is display-only.
+            // Scrubbing is intentionally limited to pointer-downs that start in RulerViewport.
+            var bodyInput = bodyGo.GetComponent<PlayheadDragInput>();
+            if (bodyInput != null) bodyInput.enabled = false;
+            SetPlayheadRaycastTargets(bodyGo, false);
+            var bodyLine = bodyGo.transform.Find("Line") as RectTransform;
+            if (bodyLine != null)
+            {
+                bodyLine.anchorMin = new Vector2(0.5f, 0f);
+                bodyLine.anchorMax = new Vector2(0.5f, 1f);
+                bodyLine.pivot = new Vector2(0.5f, 0.5f);
+                bodyLine.sizeDelta = new Vector2(2f, 0f);
+            }
             _playhead.SetAsLastSibling();
 
-            var rulerGo = UiFactory.CreateUIObject("RulerPlayhead", _rulerContent);
+            var rulerGo = Instantiate(_app.UiPrefabs.RulerPlayheadPrefab, _rulerContent);
+            rulerGo.name = "RulerPlayhead";
             _rulerPlayhead = (RectTransform)rulerGo.transform;
-            _rulerPlayhead.anchorMin = _rulerPlayhead.anchorMax = new Vector2(0f, 1f);
-            _rulerPlayhead.pivot = new Vector2(0.5f, 1f);
             _rulerPlayhead.sizeDelta = new Vector2(12f, RulerHeight);
-            UiFactory.AddImage(rulerGo, new Color(0f, 0f, 0f, 0f)).raycastTarget = true;
-            rulerGo.AddComponent<PlayheadDragInput>().Initialize(_app, _rulerContent);
-            var rulerLine = UiFactory.CreateUIObject("Line", rulerGo.transform);
-            var rulerLineRt = (RectTransform)rulerLine.transform;
-            rulerLineRt.anchorMin = new Vector2(0.5f, 0f);
-            rulerLineRt.anchorMax = new Vector2(0.5f, 1f);
-            rulerLineRt.pivot = new Vector2(0.5f, 0.5f);
-            rulerLineRt.sizeDelta = new Vector2(2f, 0f);
-            UiFactory.AddImage(rulerLine, new Color(1f, 0.3f, 0.25f, 1f)).raycastTarget = false;
-            var headGo = UiFactory.CreateUIObject("Head", rulerGo.transform);
-            var headRt = (RectTransform)headGo.transform;
-            headRt.anchorMin = headRt.anchorMax = new Vector2(0.5f, 1f);
-            headRt.pivot = new Vector2(0.5f, 0.5f);
-            headRt.anchoredPosition = new Vector2(0f, -5f);
-            headRt.sizeDelta = new Vector2(10f, 10f);
-            headRt.localRotation = Quaternion.Euler(0f, 0f, 45f);
-            UiFactory.AddImage(headGo, new Color(1f, 0.3f, 0.25f, 1f)).raycastTarget = false;
+            var rulerInput = rulerGo.GetComponent<PlayheadDragInput>();
+            if (rulerInput != null)
+            {
+                rulerInput.enabled = true;
+                rulerInput.Initialize(_app, _rulerContent, _rulerViewport);
+            }
             _rulerPlayhead.SetAsLastSibling();
+        }
+
+        private static void SetPlayheadRaycastTargets(GameObject playhead, bool raycastTarget)
+        {
+            if (playhead == null) return;
+            var graphics = playhead.GetComponentsInChildren<Graphic>(true);
+            foreach (var graphic in graphics)
+                graphic.raycastTarget = raycastTarget;
         }
 
         public void RefreshPlayhead()
         {
-            var x = _app.CurrentTime * _app.Document.Data.editorSettings.pixelsPerSecond;
+            var x = TimelineCoordinates.TimeToX(
+                _app.CurrentTime,
+                _app.Document.Data.editorSettings.pixelsPerSecond);
             if (_playhead != null) _playhead.anchoredPosition = new Vector2(x, 0f);
             if (_rulerPlayhead != null) _rulerPlayhead.anchoredPosition = new Vector2(x, 0f);
         }
@@ -607,14 +905,6 @@ namespace LightingScenarioTool
             RefreshPlayhead();
         }
 
-        public void PositionColorKeyframeMarker(string unitId, string keyframeId, RectTransform marker)
-        {
-            var keyframe = _app.Document.FindColorKeyframe(unitId, keyframeId);
-            if (keyframe == null || marker == null) return;
-            marker.anchoredPosition = new Vector2(
-                keyframe.time * _app.Document.Data.editorSettings.pixelsPerSecond,
-                0f);
-        }
 
         public void RefreshSelection()
         {
@@ -625,7 +915,7 @@ namespace LightingScenarioTool
             {
                 if (pair.Value == null) continue;
                 pair.Value.color = pair.Key == _app.SelectedUnitId
-                    ? new Color(0.24f, 0.24f, 0.16f, 1f)
+                    ? AppTheme.AccentTint
                     : _trackLabelBaseColors[pair.Key];
             }
 
@@ -633,9 +923,12 @@ namespace LightingScenarioTool
             {
                 if (pair.Value == null) continue;
                 pair.Value.color = pair.Key == _app.SelectedUnitId
-                    ? new Color(0.145f, 0.145f, 0.105f, 1f)
+                    ? AppTheme.AccentTintSoft
                     : _trackTimeBaseColors[pair.Key];
             }
+
+            foreach (var pair in _trackAccentLines)
+                if (pair.Value != null) pair.Value.gameObject.SetActive(pair.Key == _app.SelectedUnitId);
         }
 
         internal void ScrollVertical(float wheelDelta)
@@ -729,387 +1022,6 @@ namespace LightingScenarioTool
             if (_rulerContent != null) _rulerContent.anchoredPosition = new Vector2(-horizontalPixels, 0f);
             if (_timeContent != null) _timeContent.anchoredPosition = new Vector2(-horizontalPixels, _verticalOffset);
             if (_labelsContent != null) _labelsContent.anchoredPosition = new Vector2(0f, _verticalOffset);
-        }
-    }
-
-    internal sealed class TimelineMiddleMousePanInput : MonoBehaviour
-    {
-        private TimelinePanel _panel;
-        private bool _panning;
-        private Vector2 _lastPointerPosition;
-
-        public void Initialize(TimelinePanel panel)
-        {
-            _panel = panel;
-        }
-
-        private void Update()
-        {
-            if (_panel == null) return;
-
-            var pointerPosition = ShortcutInput.PointerPosition;
-            if (!_panning)
-            {
-                if (!ShortcutInput.MiddleMousePressedThisFrame || !_panel.CanStartHorizontalPan(pointerPosition))
-                    return;
-
-                _panning = true;
-                _lastPointerPosition = pointerPosition;
-                return;
-            }
-
-            if (!ShortcutInput.MiddleMousePressed)
-            {
-                _panning = false;
-                return;
-            }
-
-            var delta = pointerPosition - _lastPointerPosition;
-            _lastPointerPosition = pointerPosition;
-
-            // Grab-and-drag semantics: dragging the pointer right pulls the timeline
-            // content right, so the scroll position itself moves left.
-            if (Mathf.Abs(delta.x) > 0.001f)
-                _panel.ScrollHorizontalByPixels(-delta.x);
-        }
-
-        private void OnDisable()
-        {
-            _panning = false;
-        }
-    }
-
-    internal sealed class TimelineWheelInput : MonoBehaviour, IScrollHandler
-    {
-        private TimelinePanel _panel;
-        public void Initialize(TimelinePanel panel) => _panel = panel;
-
-        public void OnScroll(PointerEventData eventData)
-        {
-            if (_panel == null) return;
-            if (ShortcutInput.CtrlPressed)
-            {
-                if (eventData.scrollDelta.y > 0.001f) _panel.App.ZoomIn();
-                else if (eventData.scrollDelta.y < -0.001f) _panel.App.ZoomOut();
-            }
-            else
-            {
-                _panel.ScrollVertical(eventData.scrollDelta.y);
-            }
-            eventData.Use();
-        }
-    }
-
-    internal sealed class PlayheadDragInput : MonoBehaviour, IPointerDownHandler, IDragHandler
-    {
-        private LightingScenarioApp _app;
-        private RectTransform _content;
-        public void Initialize(LightingScenarioApp app, RectTransform content) { _app = app; _content = content; }
-        public void OnPointerDown(PointerEventData eventData)
-        {
-            if (eventData.button == PointerEventData.InputButton.Left) SetTime(eventData);
-        }
-
-        public void OnDrag(PointerEventData eventData)
-        {
-            if (eventData.button == PointerEventData.InputButton.Left) SetTime(eventData);
-        }
-
-        private void SetTime(PointerEventData eventData)
-        {
-            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                    _content, eventData.position, eventData.pressEventCamera, out var local)) return;
-            var x = local.x + _content.pivot.x * _content.rect.width;
-            _app.SetCurrentTime(x / _app.Document.Data.editorSettings.pixelsPerSecond);
-        }
-    }
-
-    internal sealed class TimelineRulerInput : MonoBehaviour, IPointerDownHandler, IDragHandler
-    {
-        private LightingScenarioApp _app;
-        private RectTransform _rt;
-        public void Initialize(LightingScenarioApp app, RectTransform rt) { _app = app; _rt = rt; }
-        public void OnPointerDown(PointerEventData eventData)
-        {
-            if (eventData.button == PointerEventData.InputButton.Left) SetTime(eventData);
-        }
-
-        public void OnDrag(PointerEventData eventData)
-        {
-            if (eventData.button == PointerEventData.InputButton.Left) SetTime(eventData);
-        }
-
-        private void SetTime(PointerEventData eventData)
-        {
-            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                    _rt, eventData.position, eventData.pressEventCamera, out var local)) return;
-            var x = local.x + _rt.pivot.x * _rt.rect.width;
-            _app.SetCurrentTime(x / _app.Document.Data.editorSettings.pixelsPerSecond);
-        }
-    }
-
-    internal sealed class TrackColorInput : MonoBehaviour, IPointerClickHandler
-    {
-        private LightingScenarioApp _app;
-        private string _unitId;
-        private RectTransform _rt;
-        public void Initialize(LightingScenarioApp app, string unitId, RectTransform rt)
-        {
-            _app = app;
-            _unitId = unitId;
-            _rt = rt;
-        }
-
-        public void OnPointerClick(PointerEventData eventData)
-        {
-            if (eventData.button != PointerEventData.InputButton.Left) return;
-            if (eventData.clickCount < 2)
-            {
-                _app.SelectUnit(_unitId);
-                return;
-            }
-
-            var unit = _app.Document.FindUnit(_unitId);
-            if (unit == null || unit.track.locked) return;
-            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                    _rt, eventData.position, eventData.pressEventCamera, out var local)) return;
-            var x = local.x + _rt.pivot.x * _rt.rect.width;
-            _app.CreateColorKeyframe(
-                _unitId,
-                x / _app.Document.Data.editorSettings.pixelsPerSecond);
-        }
-    }
-
-    internal sealed class TrackLabelClick : MonoBehaviour, IPointerClickHandler
-    {
-        private LightingScenarioApp _app;
-        private string _unitId;
-        public void Initialize(LightingScenarioApp app, string unitId) { _app = app; _unitId = unitId; }
-        public void OnPointerClick(PointerEventData eventData)
-        {
-            if (eventData.button == PointerEventData.InputButton.Left)
-                _app.SelectUnit(_unitId);
-        }
-    }
-
-    internal sealed class TimelineMarqueeSelectInput : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
-    {
-        private TimelinePanel _panel;
-        private bool _dragging;
-        private Vector2 _startScreen;
-        private Camera _eventCamera;
-        private bool _additive;
-
-        public void Initialize(TimelinePanel panel) => _panel = panel;
-
-        public void OnBeginDrag(PointerEventData eventData)
-        {
-            if (_panel == null || eventData.button != PointerEventData.InputButton.Left) return;
-            _dragging = true;
-            _startScreen = eventData.position;
-            _eventCamera = eventData.pressEventCamera;
-            _additive = ShortcutInput.CtrlPressed;
-            _panel.BeginMarqueeSelection(_startScreen, _eventCamera);
-        }
-
-        public void OnDrag(PointerEventData eventData)
-        {
-            if (!_dragging || _panel == null) return;
-            _panel.UpdateMarqueeSelection(_startScreen, eventData.position, _eventCamera);
-        }
-
-        public void OnEndDrag(PointerEventData eventData)
-        {
-            if (!_dragging || _panel == null) return;
-            _dragging = false;
-            _panel.EndMarqueeSelection(_startScreen, eventData.position, _additive);
-        }
-
-        private void OnDisable()
-        {
-            _dragging = false;
-            _panel?.CancelMarqueeSelection();
-        }
-    }
-
-    internal sealed class ColorKeyframeView : MonoBehaviour, IPointerClickHandler, IBeginDragHandler, IDragHandler, IEndDragHandler
-    {
-        private LightingScenarioApp _app;
-        private string _unitId;
-        private string _keyframeId;
-        private RectTransform _rt;
-        private Image _image;
-        private Outline _outline;
-        private string _beforeDrag;
-        private bool _dragging;
-        private Vector2 _dragStartScreen;
-        private Dictionary<string, float> _originalTimes;
-        private float _primaryOriginalTime;
-
-        internal RectTransform RectTransform => _rt;
-
-        public void Initialize(LightingScenarioApp app, string unitId, string keyframeId)
-        {
-            _app = app;
-            _unitId = unitId;
-            _keyframeId = keyframeId;
-            _rt = (RectTransform)transform;
-            _rt.anchorMin = _rt.anchorMax = new Vector2(0f, 0.5f);
-            _rt.pivot = new Vector2(0.5f, 0.5f);
-            _rt.sizeDelta = new Vector2(14f, 14f);
-            _rt.localRotation = Quaternion.Euler(0f, 0f, 45f);
-
-            var key = _app.Document.FindColorKeyframe(unitId, keyframeId);
-            _image = UiFactory.AddImage(gameObject, key != null ? key.color.ToUnityColor() : Color.black);
-            _image.raycastTarget = true;
-            _outline = gameObject.AddComponent<Outline>();
-            _outline.effectColor = new Color(1f, 0.85f, 0.15f, 1f);
-            _outline.effectDistance = new Vector2(2f, 2f);
-            RefreshPosition();
-            RefreshSelection();
-        }
-
-        public void RefreshPosition()
-        {
-            var key = _app.Document.FindColorKeyframe(_unitId, _keyframeId);
-            if (key == null) return;
-            _rt.anchoredPosition = new Vector2(
-                key.time * _app.Document.Data.editorSettings.pixelsPerSecond,
-                0f);
-            _image.color = key.color.ToUnityColor();
-        }
-
-        public void RefreshSelection()
-        {
-            if (_outline == null || _image == null) return;
-            var selected = _app.IsColorKeyframeSelected(_keyframeId);
-            if (selected)
-            {
-                _outline.enabled = true;
-                _outline.effectColor = new Color(1f, 0.82f, 0.12f, 1f);
-                _outline.effectDistance = new Vector2(2f, 2f);
-                return;
-            }
-
-            var c = _image.color;
-            var luminance = 0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b;
-            _outline.enabled = true;
-            _outline.effectColor = luminance < 0.25f
-                ? new Color(0.78f, 0.78f, 0.78f, 1f)
-                : new Color(0.05f, 0.05f, 0.05f, 1f);
-            _outline.effectDistance = new Vector2(1.2f, 1.2f);
-        }
-
-        public void OnPointerClick(PointerEventData eventData)
-        {
-            if (eventData.button == PointerEventData.InputButton.Left)
-            {
-                var additive = ShortcutInput.CtrlPressed;
-                if (eventData.clickCount >= 2)
-                {
-                    // Do not toggle an already selected keyframe off on the second click
-                    // when Ctrl multi-selection is active. Double-click is reserved for color edit.
-                    if (!_app.IsColorKeyframeSelected(_keyframeId))
-                        _app.SelectColorKeyframe(_unitId, _keyframeId, additive);
-                    _app.OpenColorPickerForSelection(_rt);
-                }
-                else
-                {
-                    _app.SelectColorKeyframe(_unitId, _keyframeId, additive);
-                }
-                return;
-            }
-
-            if (eventData.button == PointerEventData.InputButton.Right)
-            {
-                if (!_app.IsColorKeyframeSelected(_keyframeId))
-                    _app.SelectColorKeyframe(_unitId, _keyframeId, false);
-                var unit = _app.Document.FindUnit(_unitId);
-                if (unit == null || unit.track.locked) return;
-                var label = _app.SelectedColorKeyframeIds.Count > 1
-                    ? "Delete Selected Keyframes"
-                    : "Delete Color Keyframe";
-                _app.ShowContext(eventData.position, label, _app.DeleteSelectedColorKeyframes);
-            }
-        }
-
-        public void OnBeginDrag(PointerEventData eventData)
-        {
-            if (eventData.button != PointerEventData.InputButton.Left) return;
-            var unit = _app.Document.FindUnit(_unitId);
-            if (unit == null || unit.track.locked) return;
-
-            if (!_app.IsColorKeyframeSelected(_keyframeId))
-            {
-                var additive = ShortcutInput.CtrlPressed;
-                _app.SelectColorKeyframe(_unitId, _keyframeId, additive, false);
-            }
-
-            _originalTimes = new Dictionary<string, float>();
-            foreach (var id in _app.SelectedColorKeyframeIds)
-            {
-                var selectedUnit = _app.Document.FindUnitForColorKeyframe(id);
-                var key = _app.Document.FindColorKeyframe(id);
-                if (selectedUnit == null || key == null || selectedUnit.track.locked)
-                {
-                    _originalTimes = null;
-                    return;
-                }
-                _originalTimes[id] = key.time;
-            }
-
-            if (!_originalTimes.TryGetValue(_keyframeId, out _primaryOriginalTime)) return;
-            _dragging = true;
-            _dragStartScreen = eventData.position;
-            _beforeDrag = _app.Document.CaptureState();
-        }
-
-        public void OnDrag(PointerEventData eventData)
-        {
-            if (!_dragging || _originalTimes == null || _originalTimes.Count == 0) return;
-            var canvas = GetComponentInParent<Canvas>();
-            var scale = canvas != null ? canvas.scaleFactor : 1f;
-            var delta = (eventData.position.x - _dragStartScreen.x)
-                        / Mathf.Max(0.0001f, scale)
-                        / Mathf.Max(0.0001f, _app.Document.Data.editorSettings.pixelsPerSecond);
-
-            var minOriginal = _originalTimes.Values.Min();
-            var maxOriginal = _originalTimes.Values.Max();
-            delta = Mathf.Clamp(delta, -minOriginal, _app.Document.Data.metadata.duration - maxOriginal);
-
-            var desiredPrimary = _primaryOriginalTime + delta;
-            var snappedPrimary = _app.Document.SnapColorKeyframeTime(
-                desiredPrimary,
-                _originalTimes.Keys);
-            var adjusted = snappedPrimary - _primaryOriginalTime;
-            adjusted = Mathf.Clamp(adjusted, -minOriginal, _app.Document.Data.metadata.duration - maxOriginal);
-
-            var proposed = new Dictionary<string, float>();
-            foreach (var pair in _originalTimes)
-                proposed[pair.Key] = pair.Value + adjusted;
-
-            if (_app.SetColorKeyframeTimesNoHistory(proposed, out _))
-                _app.RefreshTimelineGeometry();
-        }
-
-        public void OnEndDrag(PointerEventData eventData)
-        {
-            if (!_dragging) return;
-            _dragging = false;
-            _app.CommitExternalEdit(_beforeDrag);
-            _beforeDrag = null;
-            _originalTimes = null;
-        }
-
-        private void OnDisable()
-        {
-            if (_dragging)
-            {
-                _dragging = false;
-                _app?.CommitExternalEdit(_beforeDrag);
-            }
-            _beforeDrag = null;
-            _originalTimes = null;
         }
     }
 }

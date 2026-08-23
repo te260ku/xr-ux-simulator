@@ -1,0 +1,1611 @@
+Only in /mnt/data/lighting_refactor/original/LightingScenarioTool: README.md.tmp
+Only in /mnt/data/lighting_refactor/LightingScenarioTool_Refactored/Runtime/Core: ScenarioDataUtility.cs
+diff -ru '--exclude=*.meta' /mnt/data/lighting_refactor/original/LightingScenarioTool/Runtime/Core/ScenarioDocument.cs /mnt/data/lighting_refactor/LightingScenarioTool_Refactored/Runtime/Core/ScenarioDocument.cs
+--- /mnt/data/lighting_refactor/original/LightingScenarioTool/Runtime/Core/ScenarioDocument.cs	2026-08-22 04:17:55.000000000 +0000
++++ /mnt/data/lighting_refactor/LightingScenarioTool_Refactored/Runtime/Core/ScenarioDocument.cs	2026-08-22 13:50:55.331582189 +0000
+@@ -1,39 +1,41 @@
+ using System;
+ using System.Collections.Generic;
++using System.IO;
+ using System.Linq;
+ using UnityEngine;
+ 
+ namespace LightingScenarioTool
+ {
+     /// <summary>
+-    /// Scenario editing model with undo / redo history.
+-    /// The timeline contains Color Keyframes only; clip/effect concepts are intentionally absent.
++    /// Owns editable scenario data, undo/redo history, validation and mutations.
++    /// Transient playhead movement is intentionally excluded from dirty-state tracking.
+     /// </summary>
+     public sealed class ScenarioDocument
+     {
+-        private const float Epsilon = 0.0001f;
++        private const int MaxHistoryEntries = 100;
+         private readonly Stack<string> _undo = new Stack<string>();
+         private readonly Stack<string> _redo = new Stack<string>();
+         private string _savedPersistentState;
+ 
+-        public ScenarioData Data { get; private set; } = ScenarioData.CreateDefault();
++        public ScenarioData Data { get; private set; }
+         public string CurrentProjectPath { get; private set; }
+         public bool IsDirty { get; private set; }
+         public bool CanUndo => _undo.Count > 0;
+         public bool CanRedo => _redo.Count > 0;
++
+         public event Action Changed;
+ 
+         public ScenarioDocument()
+         {
++            Data = ScenarioDataUtility.Normalize(ScenarioData.CreateDefault());
+             _savedPersistentState = CapturePersistentState();
+         }
+ 
+         public void NewDocument()
+         {
+-            Data = ScenarioData.CreateDefault();
++            Data = ScenarioDataUtility.Normalize(ScenarioData.CreateDefault());
+             CurrentProjectPath = null;
+-            _undo.Clear();
+-            _redo.Clear();
++            ClearHistory();
+             _savedPersistentState = CapturePersistentState();
+             IsDirty = false;
+             NotifyChanged();
+@@ -41,11 +43,9 @@
+ 
+         public void LoadDocument(ScenarioData data, string projectPath = null)
+         {
+-            Data = data ?? ScenarioData.CreateDefault();
+-            Normalize(Data);
++            Data = ScenarioDataUtility.Normalize(data ?? ScenarioData.CreateDefault());
+             CurrentProjectPath = NormalizeProjectPath(projectPath);
+-            _undo.Clear();
+-            _redo.Clear();
++            ClearHistory();
+             _savedPersistentState = CapturePersistentState();
+             IsDirty = false;
+             NotifyChanged();
+@@ -59,53 +59,33 @@
+             NotifyChanged();
+         }
+ 
++        /// <summary>
++        /// Recalculates dirty state after an intentionally history-free persistent edit.
++        /// Prefer Execute/CommitExternalEdit for normal editing operations.
++        /// </summary>
+         public void MarkDirtyWithoutNotification()
+         {
+             RecalculateDirty();
+         }
+ 
+-        private static string NormalizeProjectPath(string path)
++        public string CaptureState()
+         {
+-            if (string.IsNullOrWhiteSpace(path)) return null;
+-            try { return System.IO.Path.GetFullPath(path.Trim()); }
+-            catch { return path.Trim(); }
++            return JsonUtility.ToJson(Data);
+         }
+ 
+-        private string CapturePersistentState()
++        public void CommitExternalEdit(string beforeState)
+         {
+-            if (Data == null) return string.Empty;
+-            if (Data.editorSettings == null) return JsonUtility.ToJson(Data);
++            if (string.IsNullOrEmpty(beforeState)) return;
+ 
+-            // Moving the playhead is intentionally not treated as a project edit.
+-            var currentTime = Data.editorSettings.currentTime;
+-            try
+-            {
+-                Data.editorSettings.currentTime = 0f;
+-                return JsonUtility.ToJson(Data);
+-            }
+-            finally
++            ScenarioDataUtility.Normalize(Data);
++            var afterState = CaptureState();
++            if (string.Equals(beforeState, afterState, StringComparison.Ordinal))
+             {
+-                Data.editorSettings.currentTime = currentTime;
++                RecalculateDirty();
++                return;
+             }
+-        }
+ 
+-        private void RecalculateDirty()
+-        {
+-            IsDirty = !string.Equals(
+-                CapturePersistentState(),
+-                _savedPersistentState ?? string.Empty,
+-                StringComparison.Ordinal);
+-        }
+-
+-        public string CaptureState() => JsonUtility.ToJson(Data);
+-
+-        public void CommitExternalEdit(string beforeState)
+-        {
+-            if (string.IsNullOrEmpty(beforeState)) return;
+-            Normalize(Data);
+-            var after = JsonUtility.ToJson(Data);
+-            if (string.Equals(beforeState, after, StringComparison.Ordinal)) return;
+-            _undo.Push(beforeState);
++            PushBounded(_undo, beforeState);
+             _redo.Clear();
+             RecalculateDirty();
+             NotifyChanged();
+@@ -114,27 +94,42 @@
+         public void CancelExternalEdit(string beforeState)
+         {
+             if (string.IsNullOrEmpty(beforeState)) return;
+-            Data = JsonUtility.FromJson<ScenarioData>(beforeState) ?? ScenarioData.CreateDefault();
+-            Normalize(Data);
++            RestoreState(beforeState);
+             RecalculateDirty();
+             NotifyChanged();
+         }
+ 
++        /// <summary>
++        /// Executes one atomic document mutation. If the mutation throws, the previous
++        /// serialized state is restored before the exception is propagated.
++        /// </summary>
+         public void Execute(Action<ScenarioData> mutation)
+         {
+             if (mutation == null) return;
+-            var before = CaptureState();
+-            mutation(Data);
+-            Normalize(Data);
+-            CommitExternalEdit(before);
++
++            var beforeState = CaptureState();
++            try
++            {
++                mutation(Data);
++                ScenarioDataUtility.Normalize(Data);
++            }
++            catch
++            {
++                RestoreState(beforeState);
++                throw;
++            }
++
++            CommitExternalEdit(beforeState);
+         }
+ 
+         public void Undo()
+         {
+             if (_undo.Count == 0) return;
+-            _redo.Push(CaptureState());
+-            Data = JsonUtility.FromJson<ScenarioData>(_undo.Pop()) ?? ScenarioData.CreateDefault();
+-            Normalize(Data);
++
++            var currentTime = Data.editorSettings.currentTime;
++            PushBounded(_redo, CaptureState());
++            RestoreState(_undo.Pop());
++            SetCurrentTimeTransient(currentTime);
+             RecalculateDirty();
+             NotifyChanged();
+         }
+@@ -142,49 +137,84 @@
+         public void Redo()
+         {
+             if (_redo.Count == 0) return;
+-            _undo.Push(CaptureState());
+-            Data = JsonUtility.FromJson<ScenarioData>(_redo.Pop()) ?? ScenarioData.CreateDefault();
+-            Normalize(Data);
++
++            var currentTime = Data.editorSettings.currentTime;
++            PushBounded(_undo, CaptureState());
++            RestoreState(_redo.Pop());
++            SetCurrentTimeTransient(currentTime);
+             RecalculateDirty();
+             NotifyChanged();
+         }
+ 
+-        public LightingUnitData FindUnit(string unitId) =>
+-            Data.lightingUnits.FirstOrDefault(x => x.unitId == unitId);
++        public LightingUnitData FindUnit(string unitId)
++        {
++            if (string.IsNullOrEmpty(unitId)) return null;
++            return Data.lightingUnits.FirstOrDefault(unit =>
++                unit != null && string.Equals(unit.unitId, unitId, StringComparison.Ordinal));
++        }
+ 
+         public ColorKeyframeData FindColorKeyframe(string unitId, string keyframeId)
+         {
+             var unit = FindUnit(unitId);
+-            return unit?.track?.colorKeyframes?.FirstOrDefault(x => x.keyframeId == keyframeId);
++            if (unit?.track?.colorKeyframes == null || string.IsNullOrEmpty(keyframeId)) return null;
++            return unit.track.colorKeyframes.FirstOrDefault(key =>
++                key != null && string.Equals(key.keyframeId, keyframeId, StringComparison.Ordinal));
+         }
+ 
+         public ColorKeyframeData FindColorKeyframe(string keyframeId)
+         {
+-            foreach (var unit in Data.lightingUnits)
+-            {
+-                var keyframe = unit?.track?.colorKeyframes?.FirstOrDefault(x => x.keyframeId == keyframeId);
+-                if (keyframe != null) return keyframe;
+-            }
+-            return null;
++            return TryFindColorKeyframeLocation(keyframeId, out _, out var keyframe)
++                ? keyframe
++                : null;
+         }
+ 
+         public LightingUnitData FindUnitForColorKeyframe(string keyframeId)
+         {
+-            return Data.lightingUnits.FirstOrDefault(x =>
+-                x?.track?.colorKeyframes != null && x.track.colorKeyframes.Any(k => k.keyframeId == keyframeId));
++            return TryFindColorKeyframeLocation(keyframeId, out var unit, out _)
++                ? unit
++                : null;
+         }
+ 
+         public string CreateNextUnitId()
+         {
++            var usedIds = new HashSet<string>(
++                Data.lightingUnits
++                    .Where(unit => unit != null && !string.IsNullOrEmpty(unit.unitId))
++                    .Select(unit => unit.unitId),
++                StringComparer.Ordinal);
++
+             var index = 1;
+             while (true)
+             {
+                 var candidate = $"Light{index:000}";
+-                if (Data.lightingUnits.All(x => x.unitId != candidate)) return candidate;
++                if (!usedIds.Contains(candidate)) return candidate;
+                 index++;
+             }
+         }
+ 
++        public void SetCurrentTimeTransient(float time)
++        {
++            Data.editorSettings.currentTime = Mathf.Clamp(time, 0f, Data.metadata.duration);
++        }
++
++        public void SetPreviewLightSizeNoHistory(float value)
++        {
++            Data.editorSettings.previewLightSize = Mathf.Clamp(
++                value,
++                ScenarioDataUtility.MinPreviewLightSize,
++                ScenarioDataUtility.MaxPreviewLightSize);
++        }
++
++        public bool TrySetUnitPreviewPositionNoHistory(string unitId, float previewX, float previewY)
++        {
++            var unit = FindUnit(unitId);
++            if (unit == null) return false;
++
++            unit.previewX = Mathf.Clamp01(previewX);
++            unit.previewY = Mathf.Clamp01(previewY);
++            return true;
++        }
++
+         public LightingUnitData AddUnit(float previewX, float previewY)
+         {
+             LightingUnitData created = null;
+@@ -206,7 +236,9 @@
+ 
+         public void DeleteUnit(string unitId)
+         {
+-            Execute(data => data.lightingUnits.RemoveAll(x => x.unitId == unitId));
++            if (string.IsNullOrEmpty(unitId)) return;
++            Execute(data => data.lightingUnits.RemoveAll(unit =>
++                unit != null && string.Equals(unit.unitId, unitId, StringComparison.Ordinal)));
+         }
+ 
+         public LightingUnitData DuplicateUnit(LightingUnitData source, float previewX, float previewY)
+@@ -232,69 +264,27 @@
+                     displayName = CreateCopyDisplayName(data, source.displayName),
+                     previewX = Mathf.Clamp01(previewX),
+                     previewY = Mathf.Clamp01(previewY),
+-                    track = includeTrackData ? CloneTrack(source.track) : new TrackData
+-                    {
+-                        locked = false,
+-                        muted = false,
+-                        colorKeyframes = new List<ColorKeyframeData>()
+-                    }
++                    track = includeTrackData ? CloneTrack(source.track) : new TrackData()
+                 };
+                 data.lightingUnits.Add(created);
+             });
+             return created;
+         }
+ 
+-        private static TrackData CloneTrack(TrackData source)
+-        {
+-            var clone = new TrackData();
+-            if (source == null) return clone;
+-
+-            clone.locked = source.locked;
+-            clone.muted = source.muted;
+-            clone.colorKeyframes = (source.colorKeyframes ?? new List<ColorKeyframeData>())
+-                .Where(x => x != null)
+-                .Select(x => new ColorKeyframeData
+-                {
+-                    keyframeId = Guid.NewGuid().ToString("N"),
+-                    time = x.time,
+-                    color = x.color
+-                })
+-                .OrderBy(x => x.time)
+-                .ToList();
+-            return clone;
+-        }
+-
+-        private static string CreateCopyDisplayName(ScenarioData data, string sourceName)
++        public ColorKeyframeData AddColorKeyframe(string unitId, float time, out string error)
+         {
+-            var baseName = string.IsNullOrWhiteSpace(sourceName) ? "Lighting Unit" : sourceName.Trim();
+-            var copyMarkerIndex = baseName.LastIndexOf(" Copy", StringComparison.Ordinal);
+-            if (copyMarkerIndex >= 0)
++            error = null;
++            var unit = FindUnit(unitId);
++            if (unit == null)
+             {
+-                var suffix = baseName.Substring(copyMarkerIndex + 5).Trim();
+-                if (suffix.Length == 0 || int.TryParse(suffix, out _))
+-                    baseName = baseName.Substring(0, copyMarkerIndex);
++                error = "Track not found.";
++                return null;
+             }
+-
+-            var candidate = baseName + " Copy";
+-            if (data.lightingUnits.All(x => x == null || !string.Equals(x.displayName, candidate, StringComparison.Ordinal)))
+-                return candidate;
+-
+-            var index = 2;
+-            while (true)
++            if (unit.track.locked)
+             {
+-                candidate = $"{baseName} Copy {index}";
+-                if (data.lightingUnits.All(x => x == null || !string.Equals(x.displayName, candidate, StringComparison.Ordinal)))
+-                    return candidate;
+-                index++;
++                error = "Track is locked.";
++                return null;
+             }
+-        }
+-
+-        public ColorKeyframeData AddColorKeyframe(string unitId, float time, out string error)
+-        {
+-            error = null;
+-            var unit = FindUnit(unitId);
+-            if (unit == null) { error = "Track not found."; return null; }
+-            if (unit.track.locked) { error = "Track is locked."; return null; }
+ 
+             var candidate = Mathf.Clamp(time, 0f, Data.metadata.duration);
+             if (HasColorKeyframeAtTime(unit.track, candidate, null))
+@@ -310,7 +300,7 @@
+             ColorKeyframeData created = null;
+             Execute(data =>
+             {
+-                var target = data.lightingUnits.First(x => x.unitId == unitId).track;
++                var target = data.lightingUnits.First(item => item.unitId == unitId).track;
+                 created = new ColorKeyframeData
+                 {
+                     keyframeId = Guid.NewGuid().ToString("N"),
+@@ -318,130 +308,179 @@
+                     color = SerializableColor.FromUnityColor(initialColor)
+                 };
+                 target.colorKeyframes.Add(created);
+-                SortColorKeyframes(target.colorKeyframes);
++                target.colorKeyframes.Sort((a, b) => a.time.CompareTo(b.time));
+             });
+             return created;
+         }
+ 
+         public bool DeleteColorKeyframe(string unitId, string keyframeId, out string error)
+         {
++            error = null;
++            var keyframe = FindColorKeyframe(unitId, keyframeId);
++            if (keyframe == null)
++            {
++                error = "Color keyframe not found on the specified track.";
++                return false;
++            }
+             return DeleteColorKeyframes(new[] { keyframeId }, out error);
+         }
+ 
+         public bool DeleteColorKeyframes(IEnumerable<string> keyframeIds, out string error)
+         {
+             error = null;
+-            var ids = new HashSet<string>(keyframeIds ?? Enumerable.Empty<string>());
++            var ids = ToDistinctIds(keyframeIds);
+             if (ids.Count == 0) return true;
+ 
+             foreach (var id in ids)
+             {
+-                var unit = FindUnitForColorKeyframe(id);
+-                if (unit == null) { error = "Color keyframe not found."; return false; }
+-                if (unit.track.locked) { error = "One or more selected keyframes are on a locked track."; return false; }
++                if (!TryFindColorKeyframeLocation(id, out var unit, out _))
++                {
++                    error = "Color keyframe not found.";
++                    return false;
++                }
++                if (unit.track.locked)
++                {
++                    error = "One or more selected keyframes are on a locked track.";
++                    return false;
++                }
+             }
+ 
+             Execute(data =>
+             {
+                 foreach (var unit in data.lightingUnits)
+-                    unit.track.colorKeyframes.RemoveAll(k => ids.Contains(k.keyframeId));
++                    unit.track.colorKeyframes.RemoveAll(key => ids.Contains(key.keyframeId));
+             });
+             return true;
+         }
+ 
+         public bool TrySetColorKeyframeTime(string unitId, string keyframeId, float time, out string error)
+         {
+-            var before = CaptureState();
+-            var clamped = Mathf.Clamp(time, 0f, Data.metadata.duration);
+-            var proposed = new Dictionary<string, float> { [keyframeId] = clamped };
+-            if (!TrySetColorKeyframeTimesNoHistory(proposed, out error)) return false;
+-            CommitExternalEdit(before);
++            var beforeState = CaptureState();
++            if (!TrySetColorKeyframeTimeNoHistory(unitId, keyframeId, time, out error))
++                return false;
++
++            CommitExternalEdit(beforeState);
+             return true;
+         }
+ 
+         public bool TrySetColorKeyframeTimeNoHistory(string unitId, string keyframeId, float time, out string error)
+         {
+-            var proposed = new Dictionary<string, float>
++            error = null;
++            if (FindColorKeyframe(unitId, keyframeId) == null)
+             {
+-                [keyframeId] = Mathf.Clamp(time, 0f, Data.metadata.duration)
+-            };
+-            return TrySetColorKeyframeTimesNoHistory(proposed, out error);
++                error = "Color keyframe not found on the specified track.";
++                return false;
++            }
++
++            var clamped = Mathf.Clamp(time, 0f, Data.metadata.duration);
++            return TrySetColorKeyframeTimesNoHistory(
++                new Dictionary<string, float> { [keyframeId] = clamped },
++                out error);
+         }
+ 
+         /// <summary>
+         /// Applies multiple keyframe times atomically without creating an undo entry.
+-        /// Used while dragging a multi-selection. If validation fails, no keyframe is changed.
++        /// Intended for an external edit transaction such as a drag operation.
+         /// </summary>
+-        public bool TrySetColorKeyframeTimesNoHistory(IDictionary<string, float> proposedTimes, out string error)
++        public bool TrySetColorKeyframeTimesNoHistory(
++            IDictionary<string, float> proposedTimes,
++            out string error)
+         {
+             error = null;
+             if (proposedTimes == null || proposedTimes.Count == 0) return false;
+ 
+-            var proposedIds = new HashSet<string>(proposedTimes.Keys);
+-            var resolved = new Dictionary<string, ColorKeyframeData>();
+-
++            var resolvedKeyframes = new Dictionary<string, ColorKeyframeData>(StringComparer.Ordinal);
+             foreach (var pair in proposedTimes)
+             {
+-                var unit = FindUnitForColorKeyframe(pair.Key);
+-                if (unit == null) { error = "Color keyframe not found."; return false; }
+-                if (unit.track.locked) { error = "One or more selected keyframes are on a locked track."; return false; }
+-                if (pair.Value < -Epsilon || pair.Value > Data.metadata.duration + Epsilon)
+-                { error = "Keyframe time is outside the scenario range."; return false; }
+-
+-                var key = unit.track.colorKeyframes.First(k => k.keyframeId == pair.Key);
+-                resolved[pair.Key] = key;
+-            }
+-
+-            // Validate each track with the proposed times substituted for selected keys.
+-            foreach (var unit in Data.lightingUnits)
+-            {
+-                if (unit?.track?.colorKeyframes == null) continue;
+-                var times = new List<float>(unit.track.colorKeyframes.Count);
+-                foreach (var key in unit.track.colorKeyframes)
++                if (!TryFindColorKeyframeLocation(pair.Key, out var unit, out var keyframe))
+                 {
+-                    times.Add(proposedTimes.TryGetValue(key.keyframeId, out var value) ? value : key.time);
++                    error = "Color keyframe not found.";
++                    return false;
+                 }
+-                times.Sort();
+-                for (var i = 1; i < times.Count; i++)
++                if (unit.track.locked)
++                {
++                    error = "One or more selected keyframes are on a locked track.";
++                    return false;
++                }
++                if (pair.Value < -ScenarioDataUtility.TimeEpsilon ||
++                    pair.Value > Data.metadata.duration + ScenarioDataUtility.TimeEpsilon)
+                 {
+-                    if (Mathf.Abs(times[i] - times[i - 1]) <= Epsilon)
+-                    { error = "Different color keyframes cannot occupy the same time on a track."; return false; }
++                    error = "Keyframe time is outside the scenario range.";
++                    return false;
+                 }
++                resolvedKeyframes[pair.Key] = keyframe;
+             }
+ 
++            if (!ValidateProposedTimes(proposedTimes, out error))
++                return false;
++
+             foreach (var pair in proposedTimes)
+-                resolved[pair.Key].time = Mathf.Clamp(pair.Value, 0f, Data.metadata.duration);
++            {
++                resolvedKeyframes[pair.Key].time = Mathf.Clamp(
++                    pair.Value,
++                    0f,
++                    Data.metadata.duration);
++            }
+ 
+             foreach (var unit in Data.lightingUnits)
+-                SortColorKeyframes(unit.track.colorKeyframes);
++                unit.track.colorKeyframes.Sort((a, b) => a.time.CompareTo(b.time));
+             return true;
+         }
+ 
+-        public bool TrySetColorKeyframeColor(string unitId, string keyframeId, Color color, out string error)
++        public bool TrySetColorKeyframeColor(
++            string unitId,
++            string keyframeId,
++            Color color,
++            out string error)
+         {
++            error = null;
++            var keyframe = FindColorKeyframe(unitId, keyframeId);
++            if (keyframe == null)
++            {
++                error = "Color keyframe not found on the specified track.";
++                return false;
++            }
++
+             return TrySetColorKeyframesColor(new[] { keyframeId }, color, out error);
+         }
+ 
+-        public bool TrySetColorKeyframesColor(IEnumerable<string> keyframeIds, Color color, out string error)
++        public bool TrySetColorKeyframesColor(
++            IEnumerable<string> keyframeIds,
++            Color color,
++            out string error)
+         {
+             error = null;
+-            var ids = new HashSet<string>(keyframeIds ?? Enumerable.Empty<string>());
+-            if (ids.Count == 0) { error = "No color keyframes selected."; return false; }
++            var ids = ToDistinctIds(keyframeIds);
++            if (ids.Count == 0)
++            {
++                error = "No color keyframes selected.";
++                return false;
++            }
+ 
+             foreach (var id in ids)
+             {
+-                var unit = FindUnitForColorKeyframe(id);
+-                if (unit == null) { error = "Color keyframe not found."; return false; }
+-                if (unit.track.locked) { error = "One or more selected keyframes are on a locked track."; return false; }
++                if (!TryFindColorKeyframeLocation(id, out var unit, out _))
++                {
++                    error = "Color keyframe not found.";
++                    return false;
++                }
++                if (unit.track.locked)
++                {
++                    error = "One or more selected keyframes are on a locked track.";
++                    return false;
++                }
+             }
+ 
++            var serializedColor = SerializableColor.FromUnityColor(color);
+             Execute(data =>
+             {
+-                var serialized = SerializableColor.FromUnityColor(color);
+                 foreach (var unit in data.lightingUnits)
+                 {
+-                    foreach (var key in unit.track.colorKeyframes)
+-                        if (ids.Contains(key.keyframeId)) key.color = serialized;
++                    foreach (var keyframe in unit.track.colorKeyframes)
++                    {
++                        if (ids.Contains(keyframe.keyframeId))
++                            keyframe.color = serializedColor;
++                    }
+                 }
+             });
+             return true;
+@@ -449,114 +488,247 @@
+ 
+         public float SnapColorKeyframeTime(float rawTime, string unitId, string excludedKeyframeId)
+         {
+-            return SnapColorKeyframeTime(rawTime,
++            // Kept for API compatibility. Snapping is intentionally global so keyframes can
++            // align across tracks; unitId historically did not scope the candidates.
++            return SnapColorKeyframeTime(
++                rawTime,
+                 string.IsNullOrEmpty(excludedKeyframeId) ? null : new[] { excludedKeyframeId });
+         }
+ 
+         public float SnapColorKeyframeTime(float rawTime, IEnumerable<string> excludedKeyframeIds)
+         {
++            return SnapColorKeyframeTimeCore(
++                rawTime,
++                Data.lightingUnits.SelectMany(unit => unit.track.colorKeyframes),
++                excludedKeyframeIds);
++        }
++
++        public static float GetGridInterval(float pixelsPerSecond)
++        {
++            if (pixelsPerSecond < 50f) return 1f;
++            if (pixelsPerSecond < 100f) return 0.5f;
++            if (pixelsPerSecond < 180f) return 0.25f;
++            return 0.1f;
++        }
++
++        private float SnapColorKeyframeTimeCore(
++            float rawTime,
++            IEnumerable<ColorKeyframeData> candidates,
++            IEnumerable<string> excludedKeyframeIds)
++        {
+             var clamped = Mathf.Clamp(rawTime, 0f, Data.metadata.duration);
+             if (!Data.editorSettings.snapEnabled) return clamped;
+ 
+-            var pps = Mathf.Max(20f, Data.editorSettings.pixelsPerSecond);
+-            var threshold = 8f / pps;
+-            var grid = GetGridInterval(pps);
++            var pixelsPerSecond = Mathf.Max(20f, Data.editorSettings.pixelsPerSecond);
++            var threshold = 8f / pixelsPerSecond;
++            var grid = GetGridInterval(pixelsPerSecond);
+             var nearest = Mathf.Round(clamped / grid) * grid;
+             var bestDistance = Mathf.Abs(nearest - clamped);
+-            var excluded = excludedKeyframeIds != null
+-                ? new HashSet<string>(excludedKeyframeIds)
+-                : new HashSet<string>();
++            var excluded = new HashSet<string>(
++                excludedKeyframeIds ?? Enumerable.Empty<string>(),
++                StringComparer.Ordinal);
+ 
+             Consider(Data.editorSettings.currentTime, clamped, ref nearest, ref bestDistance);
++            foreach (var keyframe in candidates)
++            {
++                if (keyframe == null || excluded.Contains(keyframe.keyframeId)) continue;
++                Consider(keyframe.time, clamped, ref nearest, ref bestDistance);
++            }
++
++            return bestDistance <= threshold
++                ? Mathf.Clamp(nearest, 0f, Data.metadata.duration)
++                : clamped;
++        }
++
++        private bool ValidateProposedTimes(
++            IDictionary<string, float> proposedTimes,
++            out string error)
++        {
++            error = null;
+             foreach (var unit in Data.lightingUnits)
+             {
++                var times = new List<float>(unit.track.colorKeyframes.Count);
+                 foreach (var keyframe in unit.track.colorKeyframes)
+                 {
+-                    if (excluded.Contains(keyframe.keyframeId)) continue;
+-                    Consider(keyframe.time, clamped, ref nearest, ref bestDistance);
++                    times.Add(proposedTimes.TryGetValue(keyframe.keyframeId, out var proposed)
++                        ? proposed
++                        : keyframe.time);
++                }
++
++                times.Sort();
++                for (var i = 1; i < times.Count; i++)
++                {
++                    if (Mathf.Abs(times[i] - times[i - 1]) <= ScenarioDataUtility.TimeEpsilon)
++                    {
++                        error = "Different color keyframes cannot occupy the same time on a track.";
++                        return false;
++                    }
+                 }
+             }
++            return true;
++        }
+ 
+-            return bestDistance <= threshold
+-                ? Mathf.Clamp(nearest, 0f, Data.metadata.duration)
+-                : clamped;
++        private bool TryFindColorKeyframeLocation(
++            string keyframeId,
++            out LightingUnitData owner,
++            out ColorKeyframeData keyframe)
++        {
++            owner = null;
++            keyframe = null;
++            if (string.IsNullOrEmpty(keyframeId)) return false;
++
++            foreach (var unit in Data.lightingUnits)
++            {
++                if (unit?.track?.colorKeyframes == null) continue;
++                var found = unit.track.colorKeyframes.FirstOrDefault(item =>
++                    item != null && string.Equals(item.keyframeId, keyframeId, StringComparison.Ordinal));
++                if (found == null) continue;
++
++                owner = unit;
++                keyframe = found;
++                return true;
++            }
++            return false;
+         }
+ 
+-        public static float GetGridInterval(float pixelsPerSecond)
++        private static HashSet<string> ToDistinctIds(IEnumerable<string> ids)
+         {
+-            if (pixelsPerSecond < 50f) return 1f;
+-            if (pixelsPerSecond < 100f) return 0.5f;
+-            if (pixelsPerSecond < 180f) return 0.25f;
+-            return 0.1f;
++            return new HashSet<string>(
++                (ids ?? Enumerable.Empty<string>()).Where(id => !string.IsNullOrEmpty(id)),
++                StringComparer.Ordinal);
++        }
++
++        private static TrackData CloneTrack(TrackData source)
++        {
++            var clone = new TrackData();
++            if (source == null) return clone;
++
++            clone.locked = source.locked;
++            clone.muted = source.muted;
++            clone.colorKeyframes = (source.colorKeyframes ?? new List<ColorKeyframeData>())
++                .Where(keyframe => keyframe != null)
++                .Select(keyframe => new ColorKeyframeData
++                {
++                    keyframeId = Guid.NewGuid().ToString("N"),
++                    time = keyframe.time,
++                    color = keyframe.color
++                })
++                .OrderBy(keyframe => keyframe.time)
++                .ToList();
++            return clone;
++        }
++
++        private static string CreateCopyDisplayName(ScenarioData data, string sourceName)
++        {
++            var baseName = string.IsNullOrWhiteSpace(sourceName) ? "Lighting Unit" : sourceName.Trim();
++            var copyMarkerIndex = baseName.LastIndexOf(" Copy", StringComparison.Ordinal);
++            if (copyMarkerIndex >= 0)
++            {
++                var suffix = baseName.Substring(copyMarkerIndex + 5).Trim();
++                if (suffix.Length == 0 || int.TryParse(suffix, out _))
++                    baseName = baseName.Substring(0, copyMarkerIndex);
++            }
++
++            var candidate = baseName + " Copy";
++            if (data.lightingUnits.All(unit =>
++                    unit == null || !string.Equals(unit.displayName, candidate, StringComparison.Ordinal)))
++                return candidate;
++
++            var index = 2;
++            while (true)
++            {
++                candidate = $"{baseName} Copy {index}";
++                if (data.lightingUnits.All(unit =>
++                        unit == null || !string.Equals(unit.displayName, candidate, StringComparison.Ordinal)))
++                    return candidate;
++                index++;
++            }
++        }
++
++        private static bool HasColorKeyframeAtTime(
++            TrackData track,
++            float time,
++            string ignoredKeyframeId)
++        {
++            return track?.colorKeyframes != null && track.colorKeyframes.Any(keyframe =>
++                keyframe != null &&
++                keyframe.keyframeId != ignoredKeyframeId &&
++                Mathf.Abs(keyframe.time - time) <= ScenarioDataUtility.TimeEpsilon);
+         }
+ 
+         private static void Consider(float candidate, float raw, ref float nearest, ref float bestDistance)
+         {
+             var distance = Mathf.Abs(candidate - raw);
+-            if (distance < bestDistance)
++            if (distance >= bestDistance) return;
++            nearest = candidate;
++            bestDistance = distance;
++        }
++
++        private string CapturePersistentState()
++        {
++            if (Data == null) return string.Empty;
++            if (Data.editorSettings == null) return CaptureState();
++
++            // currentTime is a transport/playback cursor, not an authored project edit.
++            var currentTime = Data.editorSettings.currentTime;
++            try
+             {
+-                nearest = candidate;
+-                bestDistance = distance;
++                Data.editorSettings.currentTime = 0f;
++                return CaptureState();
++            }
++            finally
++            {
++                Data.editorSettings.currentTime = currentTime;
+             }
+         }
+ 
+-        private static bool HasColorKeyframeAtTime(TrackData track, float time, string ignoredKeyframeId)
++        private void RestoreState(string serializedState)
+         {
+-            return track.colorKeyframes.Any(x =>
+-                x.keyframeId != ignoredKeyframeId && Mathf.Abs(x.time - time) <= Epsilon);
++            var restored = JsonUtility.FromJson<ScenarioData>(serializedState);
++            Data = ScenarioDataUtility.Normalize(restored ?? ScenarioData.CreateDefault());
+         }
+ 
+-        private static void SortColorKeyframes(List<ColorKeyframeData> keyframes)
++        private void RecalculateDirty()
+         {
+-            keyframes.Sort((a, b) => a.time.CompareTo(b.time));
++            IsDirty = !string.Equals(
++                CapturePersistentState(),
++                _savedPersistentState ?? string.Empty,
++                StringComparison.Ordinal);
+         }
+ 
+-        private void NotifyChanged() => Changed?.Invoke();
++        private static void PushBounded(Stack<string> stack, string state)
++        {
++            stack.Push(state);
++            if (stack.Count <= MaxHistoryEntries) return;
++
++            var newestStates = stack.Take(MaxHistoryEntries).Reverse().ToArray();
++            stack.Clear();
++            foreach (var item in newestStates)
++                stack.Push(item);
++        }
+ 
+-        private static void Normalize(ScenarioData data)
++        private void ClearHistory()
+         {
+-            if (data.metadata == null) data.metadata = new ScenarioMetadata();
+-            if (string.IsNullOrEmpty(data.metadata.scenarioId)) data.metadata.scenarioId = Guid.NewGuid().ToString("N");
+-            if (string.IsNullOrEmpty(data.metadata.scenarioName)) data.metadata.scenarioName = "Untitled";
+-            data.metadata.dataFormatVersion = "3.0.0";
+-            if (data.metadata.duration <= 0f) data.metadata.duration = 10f;
+-            if (data.lightingUnits == null) data.lightingUnits = new List<LightingUnitData>();
+-            if (data.editorSettings == null) data.editorSettings = new EditorSettingsData();
+-            data.editorSettings.pixelsPerSecond = Mathf.Clamp(
+-                data.editorSettings.pixelsPerSecond <= 0f ? 100f : data.editorSettings.pixelsPerSecond,
+-                25f,
+-                400f);
+-            data.editorSettings.currentTime = Mathf.Clamp(data.editorSettings.currentTime, 0f, data.metadata.duration);
+-            data.editorSettings.previewLightSize = Mathf.Clamp(
+-                data.editorSettings.previewLightSize <= 0f ? 40f : data.editorSettings.previewLightSize,
+-                20f,
+-                40f);
++            _undo.Clear();
++            _redo.Clear();
++        }
+ 
+-            var fallbackIndex = 1;
+-            foreach (var unit in data.lightingUnits)
++        private static string NormalizeProjectPath(string path)
++        {
++            if (string.IsNullOrWhiteSpace(path)) return null;
++            try
+             {
+-                if (unit == null) continue;
+-                if (string.IsNullOrEmpty(unit.unitId)) unit.unitId = $"Light{fallbackIndex:000}";
+-                if (string.IsNullOrEmpty(unit.displayName)) unit.displayName = unit.unitId;
+-                fallbackIndex++;
+-                unit.previewX = Mathf.Clamp01(unit.previewX);
+-                unit.previewY = Mathf.Clamp01(unit.previewY);
+-                if (unit.track == null) unit.track = new TrackData();
+-                if (unit.track.colorKeyframes == null) unit.track.colorKeyframes = new List<ColorKeyframeData>();
+-
+-                unit.track.colorKeyframes.RemoveAll(x => x == null);
+-                foreach (var keyframe in unit.track.colorKeyframes)
+-                {
+-                    if (string.IsNullOrEmpty(keyframe.keyframeId)) keyframe.keyframeId = Guid.NewGuid().ToString("N");
+-                    keyframe.time = Mathf.Clamp(keyframe.time, 0f, data.metadata.duration);
+-                }
+-                SortColorKeyframes(unit.track.colorKeyframes);
+-                for (var i = unit.track.colorKeyframes.Count - 1; i > 0; i--)
+-                {
+-                    if (Mathf.Abs(unit.track.colorKeyframes[i].time - unit.track.colorKeyframes[i - 1].time) <= Epsilon)
+-                        unit.track.colorKeyframes.RemoveAt(i);
+-                }
++                return Path.GetFullPath(path.Trim());
++            }
++            catch
++            {
++                return path.Trim();
+             }
+         }
++
++        private void NotifyChanged()
++        {
++            Changed?.Invoke();
++        }
+     }
+ }
+diff -ru '--exclude=*.meta' /mnt/data/lighting_refactor/original/LightingScenarioTool/Runtime/Model/ScenarioData.cs /mnt/data/lighting_refactor/LightingScenarioTool_Refactored/Runtime/Model/ScenarioData.cs
+--- /mnt/data/lighting_refactor/original/LightingScenarioTool/Runtime/Model/ScenarioData.cs	2026-08-22 04:17:55.000000000 +0000
++++ /mnt/data/lighting_refactor/LightingScenarioTool_Refactored/Runtime/Model/ScenarioData.cs	2026-08-22 13:40:52.758087033 +0000
+@@ -19,8 +19,8 @@
+                 {
+                     scenarioId = Guid.NewGuid().ToString("N"),
+                     scenarioName = "New Scenario",
+-                    dataFormatVersion = "3.0.0",
+-                    duration = 10f
++                    dataFormatVersion = ScenarioDataUtility.CurrentFormatVersion,
++                    duration = ScenarioDataUtility.DefaultDuration
+                 },
+                 lightingUnits = new List<LightingUnitData>(),
+                 editorSettings = new EditorSettingsData()
+@@ -95,8 +95,8 @@
+         public float currentTime;
+         public bool loop;
+         public bool snapEnabled = true;
+-        public float pixelsPerSecond = 100f;
+-        public float previewLightSize = 40f;
++        public float pixelsPerSecond = ScenarioDataUtility.DefaultPixelsPerSecond;
++        public float previewLightSize = ScenarioDataUtility.DefaultPreviewLightSize;
+ 
+         // Stored in the project JSON so the preview background is restored on load.
+         // The selected file path is intentionally stored as-is (normally an absolute path).
+diff -ru '--exclude=*.meta' /mnt/data/lighting_refactor/original/LightingScenarioTool/Runtime/Persistence/JsonScenarioRepository.cs /mnt/data/lighting_refactor/LightingScenarioTool_Refactored/Runtime/Persistence/JsonScenarioRepository.cs
+--- /mnt/data/lighting_refactor/original/LightingScenarioTool/Runtime/Persistence/JsonScenarioRepository.cs	2026-08-22 04:17:55.000000000 +0000
++++ /mnt/data/lighting_refactor/LightingScenarioTool_Refactored/Runtime/Persistence/JsonScenarioRepository.cs	2026-08-22 13:52:15.377632366 +0000
+@@ -16,19 +16,23 @@
+                 throw new ArgumentException("A project file path has not been selected.", nameof(path));
+ 
+             var resolved = Path.GetFullPath(path.Trim());
+-            if (string.IsNullOrEmpty(Path.GetExtension(resolved))) resolved += ".json";
++            if (string.IsNullOrEmpty(Path.GetExtension(resolved)))
++                resolved += ".json";
+             return resolved;
+         }
+ 
+         public void Save(string path, ScenarioData data)
+         {
++            if (data == null) throw new ArgumentNullException(nameof(data));
++
+             var resolved = ResolvePath(path);
+             var directory = Path.GetDirectoryName(resolved);
+             if (string.IsNullOrEmpty(directory))
+                 throw new InvalidOperationException("The project save directory could not be determined.");
+ 
+             Directory.CreateDirectory(directory);
+-            File.WriteAllText(resolved, JsonUtility.ToJson(data, true));
++            var json = JsonUtility.ToJson(data, true);
++            WriteAtomically(resolved, json);
+         }
+ 
+         public ScenarioData Load(string path)
+@@ -37,14 +41,60 @@
+             if (!File.Exists(resolved))
+                 throw new FileNotFoundException("Scenario file was not found.", resolved);
+ 
+-            var data = JsonUtility.FromJson<ScenarioData>(File.ReadAllText(resolved));
++            var json = File.ReadAllText(resolved);
++            var data = JsonUtility.FromJson<ScenarioData>(json);
+             if (data == null)
+                 throw new InvalidDataException("Scenario JSON could not be parsed.");
+ 
++            EnsureSupportedFormatVersion(data.metadata?.dataFormatVersion);
++
+             // Unknown fields from older project versions are ignored by JsonUtility.
+-            // Current track data intentionally contains Color Keyframes only.
+-            if (data.metadata != null) data.metadata.dataFormatVersion = "3.0.0";
+-            return data;
++            // Normalization also repairs null collections and duplicate/missing IDs.
++            return ScenarioDataUtility.Normalize(data);
++        }
++
++        private static void EnsureSupportedFormatVersion(string versionText)
++        {
++            if (string.IsNullOrWhiteSpace(versionText)) return;
++
++            if (!Version.TryParse(versionText.Trim(), out var projectVersion) ||
++                !Version.TryParse(ScenarioDataUtility.CurrentFormatVersion, out var currentVersion))
++            {
++                throw new InvalidDataException(
++                    "Scenario data format version is invalid: " + versionText);
++            }
++
++            if (projectVersion.CompareTo(currentVersion) > 0)
++            {
++                throw new InvalidDataException(
++                    $"Scenario data format {projectVersion} is newer than the supported " +
++                    $"format {currentVersion}. Open it with a newer version of the tool.");
++            }
++        }
++
++        private static void WriteAtomically(string destinationPath, string contents)
++        {
++            var directory = Path.GetDirectoryName(destinationPath);
++            if (string.IsNullOrEmpty(directory))
++                throw new InvalidOperationException("The project save directory could not be determined.");
++
++            var tempPath = Path.Combine(
++                directory,
++                "." + Path.GetFileName(destinationPath) + "." + Guid.NewGuid().ToString("N") + ".tmp");
++
++            try
++            {
++                File.WriteAllText(tempPath, contents);
++                if (File.Exists(destinationPath))
++                    File.Replace(tempPath, destinationPath, null);
++                else
++                    File.Move(tempPath, destinationPath);
++            }
++            finally
++            {
++                if (File.Exists(tempPath))
++                    File.Delete(tempPath);
++            }
+         }
+     }
+ }
+diff -ru '--exclude=*.meta' /mnt/data/lighting_refactor/original/LightingScenarioTool/Runtime/UI/AppTheme.cs /mnt/data/lighting_refactor/LightingScenarioTool_Refactored/Runtime/UI/AppTheme.cs
+--- /mnt/data/lighting_refactor/original/LightingScenarioTool/Runtime/UI/AppTheme.cs	2026-08-22 13:17:54.000000000 +0000
++++ /mnt/data/lighting_refactor/LightingScenarioTool_Refactored/Runtime/UI/AppTheme.cs	2026-08-22 13:52:09.687398008 +0000
+@@ -118,6 +118,12 @@
+             SetActive(this);
+         }
+ 
++        private void OnDisable()
++        {
++            if (_active == this)
++                _active = null;
++        }
++
+ #if UNITY_EDITOR
+         private void OnValidate()
+         {
+@@ -162,6 +168,11 @@
+         {
+             if (_active != null) return _active;
+ 
++            _active = Object.FindFirstObjectByType<AppTheme>(FindObjectsInactive.Exclude);
++            if (_active != null) return _active;
++
++            // Editor-time repair can run while the authored root is inactive. Fall back to
++            // inactive themes only when no enabled instance exists.
+             _active = Object.FindFirstObjectByType<AppTheme>(FindObjectsInactive.Include);
+             if (_active != null) return _active;
+ 
+diff -ru '--exclude=*.meta' /mnt/data/lighting_refactor/original/LightingScenarioTool/Runtime/UI/LightingScenarioApp.cs /mnt/data/lighting_refactor/LightingScenarioTool_Refactored/Runtime/UI/LightingScenarioApp.cs
+--- /mnt/data/lighting_refactor/original/LightingScenarioTool/Runtime/UI/LightingScenarioApp.cs	2026-08-22 04:17:55.000000000 +0000
++++ /mnt/data/lighting_refactor/LightingScenarioTool_Refactored/Runtime/UI/LightingScenarioApp.cs	2026-08-22 13:46:56.443744448 +0000
+@@ -69,7 +69,12 @@
+         public string SelectedUnitId { get; private set; }
+         public HashSet<string> SelectedColorKeyframeIds { get; } = new HashSet<string>();
+         public float CurrentTime => Document.Data.editorSettings.currentTime;
+-        public float PreviewLightSize => Mathf.Clamp(Document.Data.editorSettings.previewLightSize <= 0f ? 40f : Document.Data.editorSettings.previewLightSize, 20f, 40f);
++        public float PreviewLightSize => Mathf.Clamp(
++            Document.Data.editorSettings.previewLightSize <= 0f
++                ? ScenarioDataUtility.DefaultPreviewLightSize
++                : Document.Data.editorSettings.previewLightSize,
++            ScenarioDataUtility.MinPreviewLightSize,
++            ScenarioDataUtility.MaxPreviewLightSize);
+         public bool ShowPreviewUnitNames => !Document.Data.editorSettings.hidePreviewUnitNames;
+ 
+         private void Awake()
+@@ -216,16 +221,10 @@
+             _durationInput.onEndEdit.RemoveListener(SetScenarioDuration);
+             _durationInput.onEndEdit.AddListener(SetScenarioDuration);
+ 
+-            _loopToggle.onValueChanged.RemoveAllListeners();
+-            _loopToggle.onValueChanged.AddListener(v =>
+-            {
+-                if (!_buildingUi) Document.Execute(d => d.editorSettings.loop = v);
+-            });
+-            _snapToggle.onValueChanged.RemoveAllListeners();
+-            _snapToggle.onValueChanged.AddListener(v =>
+-            {
+-                if (!_buildingUi) Document.Execute(d => d.editorSettings.snapEnabled = v);
+-            });
++            _loopToggle.onValueChanged.RemoveListener(OnLoopChanged);
++            _loopToggle.onValueChanged.AddListener(OnLoopChanged);
++            _snapToggle.onValueChanged.RemoveListener(OnSnapChanged);
++            _snapToggle.onValueChanged.AddListener(OnSnapChanged);
+ 
+             _keyframeTimeInput.contentType = TMP_InputField.ContentType.DecimalNumber;
+             _keyframeTimeInput.onEndEdit.RemoveListener(SetSelectedColorKeyframeTimeFromText);
+@@ -264,10 +263,19 @@
+             if (t == null) return;
+             var button = t.GetComponent<Button>();
+             if (button == null) return;
+-            button.onClick.RemoveAllListeners();
+             binder(button);
+         }
+ 
++        private void OnLoopChanged(bool value)
++        {
++            if (!_buildingUi) Document.Execute(d => d.editorSettings.loop = value);
++        }
++
++        private void OnSnapChanged(bool value)
++        {
++            if (!_buildingUi) Document.Execute(d => d.editorSettings.snapEnabled = value);
++        }
++
+         private static T FindComponent<T>(Transform root, string path) where T : Component
+         {
+             if (root == null) return null;
+@@ -504,23 +512,20 @@
+             layout.padding = new RectOffset(8, 8, 0, 0);
+             layout.spacing = 2f;
+ 
+-            Button fileButton = null;
+-            fileButton = UiFactory.CreateButton(row, "File", () => OpenFileMenu((RectTransform)fileButton.transform), 52f, AppButtonStyle.Menu);
+-            Button viewButton = null;
+-            viewButton = UiFactory.CreateButton(row, "View", () => OpenViewMenu((RectTransform)viewButton.transform), 52f, AppButtonStyle.Menu);
+-            Button helpButton = null;
+-            helpButton = UiFactory.CreateButton(row, "Help", () => OpenHelpMenu((RectTransform)helpButton.transform), 52f, AppButtonStyle.Menu);
++            UiFactory.CreateButton(row, "File", null, 52f, AppButtonStyle.Menu);
++            UiFactory.CreateButton(row, "View", null, 52f, AppButtonStyle.Menu);
++            UiFactory.CreateButton(row, "Help", null, 52f, AppButtonStyle.Menu);
+ 
+             var spacer = UiFactory.CreateUIObject("MenuSpacer", row);
+             var spacerLayout = spacer.AddComponent<LayoutElement>();
+             spacerLayout.flexibleWidth = 1f;
+             spacerLayout.minWidth = AppTheme.SpacingL;
+ 
+-            _fullscreenButton = UiFactory.CreateButton(row, "Fullscreen", ToggleFullscreenWindowMode, 92f, AppButtonStyle.Secondary);
++            _fullscreenButton = UiFactory.CreateButton(row, "Fullscreen", null, 92f, AppButtonStyle.Secondary);
+             _fullscreenButton.gameObject.name = "Button_Fullscreen";
+             _fullscreenButtonText = _fullscreenButton.GetComponentInChildren<TMP_Text>(true);
+             RefreshFullscreenButtonLabel();
+-            UiFactory.CreateButton(row, "Exit", RequestExit, 58f, AppButtonStyle.Secondary);
++            UiFactory.CreateButton(row, "Exit", null, 58f, AppButtonStyle.Secondary);
+         }
+ 
+         private static Transform CreateHeaderGroup(Transform parent, string label, float width, bool flexible = false)
+@@ -569,13 +574,11 @@
+ 
+             var scenarioGroup = CreateHeaderGroup(row, "Scenario", 310f);
+             _scenarioNameInput = UiFactory.CreateInput(scenarioGroup, "New Scenario", 310f);
+-            _scenarioNameInput.onEndEdit.AddListener(SetScenarioName);
+ 
+             var durationGroup = CreateHeaderGroup(row, "Duration", 150f);
+             var durationRow = CreateInlineRow(durationGroup);
+             _durationInput = UiFactory.CreateInput(durationRow, "10.000", 105f);
+             _durationInput.contentType = TMP_InputField.ContentType.DecimalNumber;
+-            _durationInput.onEndEdit.AddListener(SetScenarioDuration);
+             UiFactory.CreateSecondaryLabel(durationRow, "s", 20f);
+ 
+             var projectGroup = CreateHeaderGroup(row, "Project", 300f, true);
+@@ -605,11 +608,11 @@
+             layout.spacing = AppTheme.SpacingXs;
+             layout.childAlignment = TextAnchor.MiddleLeft;
+ 
+-            UiFactory.CreateButton(row, "|<", JumpToStart, 34f, AppButtonStyle.Icon);
+-            UiFactory.CreateButton(row, "Play", Play, 58f, AppButtonStyle.Primary);
+-            UiFactory.CreateButton(row, "Pause", Pause, 62f, AppButtonStyle.Secondary);
+-            UiFactory.CreateButton(row, "Stop", Stop, 58f, AppButtonStyle.Secondary);
+-            UiFactory.CreateButton(row, ">|", JumpToEnd, 34f, AppButtonStyle.Icon);
++            UiFactory.CreateButton(row, "|<", null, 34f, AppButtonStyle.Icon);
++            UiFactory.CreateButton(row, "Play", null, 58f, AppButtonStyle.Primary);
++            UiFactory.CreateButton(row, "Pause", null, 62f, AppButtonStyle.Secondary);
++            UiFactory.CreateButton(row, "Stop", null, 58f, AppButtonStyle.Secondary);
++            UiFactory.CreateButton(row, ">|", null, 34f, AppButtonStyle.Icon);
+ 
+             var transportGap = UiFactory.CreateUIObject("TransportGap", row);
+             transportGap.AddComponent<LayoutElement>().preferredWidth = AppTheme.SpacingM;
+@@ -622,15 +625,7 @@
+             optionGap.AddComponent<LayoutElement>().preferredWidth = AppTheme.SpacingL;
+ 
+             _loopToggle = UiFactory.CreateToggle(row, "Loop", false);
+-            _loopToggle.onValueChanged.AddListener(v =>
+-            {
+-                if (!_buildingUi) Document.Execute(d => d.editorSettings.loop = v);
+-            });
+             _snapToggle = UiFactory.CreateToggle(row, "Snap", true);
+-            _snapToggle.onValueChanged.AddListener(v =>
+-            {
+-                if (!_buildingUi) Document.Execute(d => d.editorSettings.snapEnabled = v);
+-            });
+ 
+             var spacer = UiFactory.CreateUIObject("ToolbarSpacer", row);
+             var spacerLayout = spacer.AddComponent<LayoutElement>();
+@@ -665,7 +660,6 @@
+             UiFactory.CreateSecondaryLabel(_selectionInspectorContent.transform, "Time", 32f);
+             _keyframeTimeInput = UiFactory.CreateInput(_selectionInspectorContent.transform, string.Empty, 96f);
+             _keyframeTimeInput.contentType = TMP_InputField.ContentType.DecimalNumber;
+-            _keyframeTimeInput.onEndEdit.AddListener(SetSelectedColorKeyframeTimeFromText);
+             UiFactory.CreateSecondaryLabel(_selectionInspectorContent.transform, "s", 16f);
+ 
+             var groupGap = UiFactory.CreateUIObject("ColorGap", _selectionInspectorContent.transform);
+@@ -683,8 +677,6 @@
+             var outline = swatchGo.AddComponent<Outline>();
+             outline.effectColor = AppTheme.Divider;
+             outline.effectDistance = new Vector2(1f, -1f);
+-            _colorSwatchButton.onClick.AddListener(OpenHsvColorPicker);
+-
+             var spacer = UiFactory.CreateUIObject("InspectorSpacer", _selectionInspectorContent.transform);
+             spacer.AddComponent<LayoutElement>().flexibleWidth = 1f;
+             _keyframeTimeInput.interactable = false;
+@@ -763,7 +755,7 @@
+ 
+         public void SetCurrentTime(float time)
+         {
+-            Document.Data.editorSettings.currentTime = Mathf.Clamp(time, 0f, Document.Data.metadata.duration);
++            Document.SetCurrentTimeTransient(time);
+             RefreshTimeLabel();
+             _timeline?.RefreshPlayhead();
+             _preview?.RefreshColors();
+@@ -774,8 +766,8 @@
+         public void SetPreviewLightSizeFromUi(float value)
+         {
+             if (_buildingUi) return;
+-            var clamped = Mathf.Clamp(value, 20f, 40f);
+-            Document.Data.editorSettings.previewLightSize = clamped;
++            var clamped = Mathf.Clamp(value, ScenarioDataUtility.MinPreviewLightSize, ScenarioDataUtility.MaxPreviewLightSize);
++            Document.SetPreviewLightSizeNoHistory(clamped);
+             Document.MarkDirtyWithoutNotification();
+             RefreshProjectStateDisplay();
+             _preview?.RefreshLightSizes();
+@@ -832,12 +824,7 @@
+             else if (!additive || SelectedColorKeyframeIds.Count == 0)
+                 _primarySelectedColorKeyframeId = SelectedColorKeyframeIds.FirstOrDefault();
+ 
+-            var selectedUnitIds = SelectedColorKeyframeIds
+-                .Select(id => Document.FindUnitForColorKeyframe(id)?.unitId)
+-                .Where(id => !string.IsNullOrEmpty(id))
+-                .Distinct()
+-                .ToList();
+-            SelectedUnitId = selectedUnitIds.Count == 1 ? selectedUnitIds[0] : null;
++            UpdateSelectedUnitFromKeyframeSelection();
+ 
+             _timeline?.RefreshSelection();
+             _preview?.RefreshSelection();
+@@ -870,12 +857,24 @@
+                 _primarySelectedColorKeyframeId = keyframeId;
+             }
+ 
+-            SelectedUnitId = unitId;
++            UpdateSelectedUnitFromKeyframeSelection();
+             if (refreshTimeline) _timeline?.RefreshSelection();
+             _preview?.RefreshSelection();
+             RefreshInspector();
+         }
+ 
++        private void UpdateSelectedUnitFromKeyframeSelection()
++        {
++            var selectedUnitIds = SelectedColorKeyframeIds
++                .Select(id => Document.FindUnitForColorKeyframe(id)?.unitId)
++                .Where(id => !string.IsNullOrEmpty(id))
++                .Distinct(StringComparer.Ordinal)
++                .Take(2)
++                .ToList();
++
++            SelectedUnitId = selectedUnitIds.Count == 1 ? selectedUnitIds[0] : null;
++        }
++
+         public void CreateColorKeyframe(string unitId, float rawTime)
+         {
+             var time = Document.SnapColorKeyframeTime(rawTime, (IEnumerable<string>)null);
+@@ -985,8 +984,8 @@
+         private void ChangeZoom(float factor) => Document.Execute(d =>
+             d.editorSettings.pixelsPerSecond = Mathf.Clamp(
+                 d.editorSettings.pixelsPerSecond * factor,
+-                25f,
+-                400f));
++                ScenarioDataUtility.MinPixelsPerSecond,
++                ScenarioDataUtility.MaxPixelsPerSecond));
+ 
+         private void JumpToStart() => SetCurrentTime(0f);
+         private void JumpToEnd() { _isPlaying = false; SetCurrentTime(Document.Data.metadata.duration); }
+@@ -1338,8 +1337,8 @@
+                 .Where(u => u != null)
+                 .ToList();
+ 
+-            _selectionInspectorContent.SetActive(true);
+             var hasSelection = selectedKeys.Count > 0;
++            _selectionInspectorContent.SetActive(hasSelection);
+             var allEditable = hasSelection && selectedUnits.Count == selectedKeys.Count && selectedUnits.All(u => !u.track.locked);
+             var single = selectedKeys.Count == 1 ? selectedKeys[0] : null;
+ 
+@@ -1597,8 +1596,7 @@
+ 
+         private void PasteClipboardWithDelta(float delta, string operationName, string destinationUnitId)
+         {
+-            const float epsilon = 0.0001f;
+-            var before = Document.CaptureState();
++            const float epsilon = ScenarioDataUtility.TimeEpsilon;
+             var plans = new List<KeyValuePair<LightingUnitData, ColorKeyframeData>>();
+             var plannedTimesByUnit = new Dictionary<string, List<float>>();
+ 
+@@ -1656,16 +1654,17 @@
+                     }));
+             }
+ 
+-            foreach (var plan in plans)
+-                plan.Key.track.colorKeyframes.Add(plan.Value);
+-            foreach (var unit in plans.Select(x => x.Key).Distinct())
+-                unit.track.colorKeyframes.Sort((a, b) => a.time.CompareTo(b.time));
+-
+-            Document.CommitExternalEdit(before);
++            Document.Execute(_ =>
++            {
++                foreach (var plan in plans)
++                    plan.Key.track.colorKeyframes.Add(plan.Value);
++                foreach (var unit in plans.Select(x => x.Key).Distinct())
++                    unit.track.colorKeyframes.Sort((a, b) => a.time.CompareTo(b.time));
++            });
+             SelectedColorKeyframeIds.Clear();
+             foreach (var plan in plans) SelectedColorKeyframeIds.Add(plan.Value.keyframeId);
+             _primarySelectedColorKeyframeId = plans.Count > 0 ? plans[plans.Count - 1].Value.keyframeId : null;
+-            if (plans.Count > 0) SelectedUnitId = plans[plans.Count - 1].Key.unitId;
++            UpdateSelectedUnitFromKeyframeSelection();
+             _timeline?.RefreshSelection();
+             _preview?.RefreshSelection();
+             RefreshInspector();
+@@ -1690,11 +1689,8 @@
+                 !SelectedColorKeyframeIds.Contains(_primarySelectedColorKeyframeId))
+                 _primarySelectedColorKeyframeId = SelectedColorKeyframeIds.FirstOrDefault();
+ 
+-            if (!string.IsNullOrEmpty(_primarySelectedColorKeyframeId))
+-            {
+-                var unit = Document.FindUnitForColorKeyframe(_primarySelectedColorKeyframeId);
+-                if (unit != null) SelectedUnitId = unit.unitId;
+-            }
++            if (SelectedColorKeyframeIds.Count > 0)
++                UpdateSelectedUnitFromKeyframeSelection();
+         }
+ 
+         private void SetStatus(string message, bool isError)
+diff -ru '--exclude=*.meta' /mnt/data/lighting_refactor/original/LightingScenarioTool/Runtime/UI/PreviewPanel.cs /mnt/data/lighting_refactor/LightingScenarioTool_Refactored/Runtime/UI/PreviewPanel.cs
+--- /mnt/data/lighting_refactor/original/LightingScenarioTool/Runtime/UI/PreviewPanel.cs	2026-08-22 04:17:55.000000000 +0000
++++ /mnt/data/lighting_refactor/LightingScenarioTool_Refactored/Runtime/UI/PreviewPanel.cs	2026-08-22 13:45:40.943016156 +0000
+@@ -54,16 +54,11 @@
+ 
+             if (_lightSizeSlider != null)
+             {
+-                _lightSizeSlider.minValue = 20f;
+-                _lightSizeSlider.maxValue = 40f;
++                _lightSizeSlider.minValue = ScenarioDataUtility.MinPreviewLightSize;
++                _lightSizeSlider.maxValue = ScenarioDataUtility.MaxPreviewLightSize;
+                 _lightSizeSlider.SetValueWithoutNotify(_app.PreviewLightSize);
+-                _lightSizeSlider.onValueChanged.RemoveAllListeners();
+-                _lightSizeSlider.onValueChanged.AddListener(value =>
+-                {
+-                    if (_updatingToolbar) return;
+-                    _app.SetPreviewLightSizeFromUi(value);
+-                    if (_lightSizeText != null) _lightSizeText.text = value.ToString("0");
+-                });
++                _lightSizeSlider.onValueChanged.RemoveListener(OnLightSizeChanged);
++                _lightSizeSlider.onValueChanged.AddListener(OnLightSizeChanged);
+             }
+ 
+             if (_selectImageButton == null)
+@@ -73,18 +68,25 @@
+             }
+             if (_selectImageButton != null)
+             {
+-                _selectImageButton.onClick.RemoveAllListeners();
++                _selectImageButton.onClick.RemoveListener(_app.BrowsePreviewBackgroundImage);
+                 _selectImageButton.onClick.AddListener(_app.BrowsePreviewBackgroundImage);
+             }
+ 
+             if (_showUnitNamesToggle != null)
+             {
+                 _showUnitNamesToggle.SetIsOnWithoutNotify(_app.ShowPreviewUnitNames);
+-                _showUnitNamesToggle.onValueChanged.RemoveAllListeners();
++                _showUnitNamesToggle.onValueChanged.RemoveListener(_app.SetPreviewUnitNamesVisible);
+                 _showUnitNamesToggle.onValueChanged.AddListener(_app.SetPreviewUnitNamesVisible);
+             }
+         }
+ 
++        private void OnLightSizeChanged(float value)
++        {
++            if (_updatingToolbar) return;
++            _app.SetPreviewLightSizeFromUi(value);
++            if (_lightSizeText != null) _lightSizeText.text = value.ToString("0");
++        }
++
+         private bool BindExistingChrome()
+         {
+             if (HasRequiredChrome()) return true;
+@@ -196,12 +198,15 @@
+             var changed = false;
+             if (_lightSizeSlider != null)
+             {
+-                if (!Mathf.Approximately(_lightSizeSlider.minValue, 20f) ||
+-                    !Mathf.Approximately(_lightSizeSlider.maxValue, 40f))
++                if (!Mathf.Approximately(_lightSizeSlider.minValue, ScenarioDataUtility.MinPreviewLightSize) ||
++                    !Mathf.Approximately(_lightSizeSlider.maxValue, ScenarioDataUtility.MaxPreviewLightSize))
+                     changed = true;
+-                _lightSizeSlider.minValue = 20f;
+-                _lightSizeSlider.maxValue = 40f;
+-                _lightSizeSlider.SetValueWithoutNotify(Mathf.Clamp(_lightSizeSlider.value, 20f, 40f));
++                _lightSizeSlider.minValue = ScenarioDataUtility.MinPreviewLightSize;
++                _lightSizeSlider.maxValue = ScenarioDataUtility.MaxPreviewLightSize;
++                _lightSizeSlider.SetValueWithoutNotify(Mathf.Clamp(
++                    _lightSizeSlider.value,
++                    ScenarioDataUtility.MinPreviewLightSize,
++                    ScenarioDataUtility.MaxPreviewLightSize));
+             }
+ 
+             if (_showUnitNamesToggle != null) return changed;
+@@ -248,13 +253,18 @@
+             toolbarLayout.childAlignment = TextAnchor.MiddleLeft;
+ 
+             UiFactory.CreateSecondaryLabel(toolbar.transform, "Background", 72f);
+-            _selectImageButton = UiFactory.CreateButton(toolbar.transform, "Select Image", _app.BrowsePreviewBackgroundImage, 94f, AppButtonStyle.Secondary);
++            _selectImageButton = UiFactory.CreateButton(toolbar.transform, "Select Image", null, 94f, AppButtonStyle.Secondary);
+ 
+             var gap = UiFactory.CreateUIObject("ToolbarGap", toolbar.transform);
+             gap.AddComponent<LayoutElement>().preferredWidth = AppTheme.SpacingS;
+ 
+             UiFactory.CreateSecondaryLabel(toolbar.transform, "Light Size", 60f);
+-            _lightSizeSlider = UiFactory.CreateSlider(toolbar.transform, 20f, 40f, _app.PreviewLightSize, 120f);
++            _lightSizeSlider = UiFactory.CreateSlider(
++                toolbar.transform,
++                ScenarioDataUtility.MinPreviewLightSize,
++                ScenarioDataUtility.MaxPreviewLightSize,
++                _app.PreviewLightSize,
++                120f);
+             _lightSizeSlider.gameObject.name = "LightSizeSlider";
+             var sliderLayout = _lightSizeSlider.GetComponent<LayoutElement>();
+             if (sliderLayout != null)
+@@ -265,16 +275,8 @@
+             _lightSizeText = UiFactory.CreateSecondaryLabel(toolbar.transform, _app.PreviewLightSize.ToString("0"), 34f);
+             _lightSizeText.gameObject.name = "LightSizeValue";
+             _lightSizeText.alignment = TextAlignmentOptions.Right;
+-            _lightSizeSlider.onValueChanged.AddListener(value =>
+-            {
+-                if (_updatingToolbar) return;
+-                _app.SetPreviewLightSizeFromUi(value);
+-                if (_lightSizeText != null) _lightSizeText.text = value.ToString("0");
+-            });
+-
+             _showUnitNamesToggle = UiFactory.CreateToggle(toolbar.transform, "Unit Names", true);
+             _showUnitNamesToggle.gameObject.name = "Toggle_Unit Names";
+-            _showUnitNamesToggle.onValueChanged.AddListener(_app.SetPreviewUnitNamesVisible);
+ 
+             var contentGo = UiFactory.CreateUIObject("PreviewContent", transform);
+             _contentRoot = (RectTransform)contentGo.transform;
+@@ -311,20 +313,35 @@
+                 Debug.LogError("Preview hierarchy/templates are not configured.", this);
+                 return;
+             }
+-            for (var i = _lightsLayer.childCount - 1; i >= 0; i--)
+-                Destroy(_lightsLayer.GetChild(i).gameObject);
+-            _views.Clear();
+ 
+             RefreshToolbar();
+             RefreshBackground();
+ 
+-            foreach (var unit in _app.Document.Data.lightingUnits)
++            // Reconcile by unit ID instead of destroying every preview object for every
++            // document change. This keeps input/selection state stable and avoids creating
++            // garbage when editing keyframes, toggles, names, or timeline settings.
++            var units = _app.Document.Data.lightingUnits;
++            var currentIds = new HashSet<string>(units.Select(unit => unit.unitId));
++            foreach (var staleId in _views.Keys.Where(id => !currentIds.Contains(id)).ToList())
++            {
++                if (_views.TryGetValue(staleId, out var staleView) && staleView != null)
++                    Destroy(staleView.gameObject);
++                _views.Remove(staleId);
++            }
++
++            for (var i = 0; i < units.Count; i++)
+             {
+-                var view = Instantiate(_lightTemplate, _lightsLayer);
+-                view.gameObject.name = unit.unitId;
+-                view.gameObject.SetActive(true);
++                var unit = units[i];
++                if (!_views.TryGetValue(unit.unitId, out var view) || view == null)
++                {
++                    view = Instantiate(_lightTemplate, _lightsLayer);
++                    view.gameObject.name = unit.unitId;
++                    view.gameObject.SetActive(true);
++                    _views[unit.unitId] = view;
++                }
++
+                 view.Initialize(_app, unit.unitId);
+-                _views[unit.unitId] = view;
++                view.transform.SetSiblingIndex(i);
+             }
+ 
+             RefreshColors();
+@@ -337,8 +354,8 @@
+             _updatingToolbar = true;
+             if (_lightSizeSlider != null)
+             {
+-                _lightSizeSlider.minValue = 20f;
+-                _lightSizeSlider.maxValue = 40f;
++                _lightSizeSlider.minValue = ScenarioDataUtility.MinPreviewLightSize;
++                _lightSizeSlider.maxValue = ScenarioDataUtility.MaxPreviewLightSize;
+                 _lightSizeSlider.SetValueWithoutNotify(_app.PreviewLightSize);
+             }
+             if (_lightSizeText != null) _lightSizeText.text = _app.PreviewLightSize.ToString("0");
+@@ -616,16 +633,16 @@
+             if (eventData.button != PointerEventData.InputButton.Left) return;
+             var parent = (RectTransform)_rt.parent;
+             if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(parent, eventData.position, eventData.pressEventCamera, out var local)) return;
+-            var unit = _app.Document.FindUnit(_unitId);
+-            if (unit == null || parent.rect.width <= 0f || parent.rect.height <= 0f) return;
++            if (_app.Document.FindUnit(_unitId) == null || parent.rect.width <= 0f || parent.rect.height <= 0f) return;
+             var halfWidth = _rt.rect.width * 0.5f;
+             var halfHeight = _rt.rect.height * 0.5f;
+             var minX = Mathf.Min(0.5f, halfWidth / parent.rect.width);
+             var minY = Mathf.Min(0.5f, halfHeight / parent.rect.height);
+             var topMargin = Mathf.Min(0.5f, (halfHeight + 21f) / parent.rect.height);
+-            unit.previewX = Mathf.Clamp(local.x / parent.rect.width + parent.pivot.x, minX, 1f - minX);
+-            unit.previewY = Mathf.Clamp(local.y / parent.rect.height + parent.pivot.y, minY, 1f - topMargin);
+-            RefreshPosition();
++            var x = Mathf.Clamp(local.x / parent.rect.width + parent.pivot.x, minX, 1f - minX);
++            var y = Mathf.Clamp(local.y / parent.rect.height + parent.pivot.y, minY, 1f - topMargin);
++            if (_app.Document.TrySetUnitPreviewPositionNoHistory(_unitId, x, y))
++                RefreshPosition();
+         }
+ 
+         public void OnEndDrag(PointerEventData eventData)
+diff -ru '--exclude=*.meta' /mnt/data/lighting_refactor/original/LightingScenarioTool/Runtime/UI/TimelinePanel.cs /mnt/data/lighting_refactor/LightingScenarioTool_Refactored/Runtime/UI/TimelinePanel.cs
+--- /mnt/data/lighting_refactor/original/LightingScenarioTool/Runtime/UI/TimelinePanel.cs	2026-08-22 04:17:55.000000000 +0000
++++ /mnt/data/lighting_refactor/LightingScenarioTool_Refactored/Runtime/UI/TimelinePanel.cs	2026-08-22 13:51:06.783772452 +0000
+@@ -555,7 +555,6 @@
+                 colorMultiplier = 1f,
+                 fadeDuration = 0.08f
+             };
+-            _horizontalScrollbar.onValueChanged.AddListener(OnHorizontalScrollbarChanged);
+             background.raycastTarget = true;
+         }
+ 
+@@ -597,7 +596,11 @@
+         {
+             if (parent == null) return;
+             for (var i = parent.childCount - 1; i >= 0; i--)
+-                Object.Destroy(parent.GetChild(i).gameObject);
++            {
++                var child = parent.GetChild(i).gameObject;
++                child.SetActive(false);
++                Object.Destroy(child);
++            }
+         }
+ 
+         private void BuildTrackLabelTemplate(Transform parent)
+@@ -742,7 +745,6 @@
+             if (nameInput != null)
+             {
+                 nameInput.SetTextWithoutNotify(unit.displayName);
+-                nameInput.onEndEdit.RemoveAllListeners();
+                 var capturedUnitId = unit.unitId;
+                 nameInput.onEndEdit.AddListener(value => _app.SetUnitName(capturedUnitId, value));
+             }
+@@ -751,26 +753,22 @@
+             if (lockToggle != null)
+             {
+                 lockToggle.SetIsOnWithoutNotify(unit.track.locked);
+-                lockToggle.onValueChanged.RemoveAllListeners();
+                 lockToggle.onValueChanged.AddListener(v => _app.SetTrackLocked(unit.unitId, v));
+             }
+             var muteToggle = rowGo.transform.Find("Toggle_Mute")?.GetComponent<Toggle>();
+             if (muteToggle != null)
+             {
+                 muteToggle.SetIsOnWithoutNotify(unit.track.muted);
+-                muteToggle.onValueChanged.RemoveAllListeners();
+                 muteToggle.onValueChanged.AddListener(v => _app.SetTrackMuted(unit.unitId, v));
+             }
+             var upButton = rowGo.transform.Find("Button_▲")?.GetComponent<Button>();
+             if (upButton != null)
+             {
+-                upButton.onClick.RemoveAllListeners();
+                 upButton.onClick.AddListener(() => _app.MoveTrack(unit.unitId, -1));
+             }
+             var downButton = rowGo.transform.Find("Button_▼")?.GetComponent<Button>();
+             if (downButton != null)
+             {
+-                downButton.onClick.RemoveAllListeners();
+                 downButton.onClick.AddListener(() => _app.MoveTrack(unit.unitId, 1));
+             }
+         }
