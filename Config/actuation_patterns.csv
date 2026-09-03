@@ -1,0 +1,4 @@
+Situation,Direction,Distance,SoundId,LightId,ImageId
+Normal,Left,Near,Sound01,Light01,Image01
+Normal,Left,Middle,Sound02,Light02,Image02
+Danger,Right,Near,Sound03,Light03,Image03
