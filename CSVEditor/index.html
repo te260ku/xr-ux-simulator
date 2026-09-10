@@ -1,0 +1,1012 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scenario Editor</title>
+<style>
+:root{
+  --bg:#f5f7fa;
+  --panel:#ffffff;
+  --line:#d9dee7;
+  --text:#20242a;
+  --muted:#6b7280;
+  --accent:#2563eb;
+  --danger:#b42318;
+  --ok:#067647;
+  --warn:#b54708;
+  --soft:#eef2f7;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
+  color:var(--text);
+  background:var(--bg);
+}
+button,input,select{font:inherit}
+button{
+  border:1px solid var(--line);
+  background:#fff;
+  border-radius:7px;
+  padding:7px 11px;
+  cursor:pointer;
+}
+button:hover{background:#f8fafc}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+button.danger{color:var(--danger)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.app{
+  height:100vh;
+  display:grid;
+  grid-template-rows:auto auto 1fr;
+}
+header{
+  background:#fff;
+  border-bottom:1px solid var(--line);
+  padding:14px 18px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+}
+header h1{font-size:18px;margin:0}
+header .sub{font-size:12px;color:var(--muted);margin-top:3px}
+.toolbar{
+  background:#fff;
+  border-bottom:1px solid var(--line);
+  padding:10px 18px;
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  align-items:center;
+}
+.file-btn{position:relative;overflow:hidden}
+.file-btn input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.workspace{
+  min-height:0;
+  display:grid;
+  grid-template-columns:minmax(520px,1.3fr) minmax(360px,.7fr);
+  gap:12px;
+  padding:12px;
+}
+.panel{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:10px;
+  min-height:0;
+  overflow:hidden;
+}
+.panel-header{
+  padding:10px 12px;
+  border-bottom:1px solid var(--line);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
+.panel-header h2{font-size:14px;margin:0}
+.panel-body{padding:12px}
+.scenario-panel{display:grid;grid-template-rows:auto auto 1fr}
+.row-actions{
+  padding:8px 10px;
+  border-bottom:1px solid var(--line);
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+}
+.table-wrap{overflow:auto;min-height:0}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{
+  border-bottom:1px solid var(--line);
+  padding:8px 9px;
+  text-align:left;
+  vertical-align:middle;
+}
+th{
+  position:sticky;
+  top:0;
+  background:#f8fafc;
+  z-index:1;
+  font-weight:600;
+  color:#475467;
+}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:#f8fafc}
+tbody tr.selected{background:#eef4ff}
+.col-no{width:48px;color:var(--muted)}
+.col-time{width:90px}
+.col-command{width:160px}
+.col-status{width:90px}
+.status-ok{color:var(--ok);font-weight:600}
+.status-error{color:var(--danger);font-weight:600}
+.empty{
+  padding:34px 18px;
+  text-align:center;
+  color:var(--muted);
+}
+.inspector{
+  height:100%;
+  overflow:auto;
+}
+.field{
+  margin-bottom:14px;
+}
+.field label{
+  display:block;
+  font-size:12px;
+  font-weight:600;
+  color:#475467;
+  margin-bottom:5px;
+}
+.field .required{color:var(--danger);margin-left:3px}
+.field input,.field select{
+  width:100%;
+  border:1px solid #cfd5df;
+  border-radius:7px;
+  padding:8px 9px;
+  background:#fff;
+}
+.field input:focus,.field select:focus{
+  outline:2px solid #c7d7fe;
+  border-color:var(--accent);
+}
+.help{font-size:11px;color:var(--muted);margin-top:4px}
+.field-error{font-size:11px;color:var(--danger);margin-top:4px}
+.section{
+  margin-top:18px;
+  border-top:1px solid var(--line);
+  padding-top:14px;
+}
+.section-title{
+  font-size:12px;
+  font-weight:700;
+  margin-bottom:8px;
+  color:#475467;
+}
+.repo-row{
+  display:grid;
+  grid-template-columns:140px 1fr auto;
+  align-items:center;
+  gap:7px;
+  margin-bottom:7px;
+}
+.repo-name{font-size:12px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+.repo-status{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.repo-file{position:relative;overflow:hidden}
+.repo-file input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.validation-box{
+  background:#fff6ed;
+  border:1px solid #fedf89;
+  border-radius:8px;
+  padding:9px 10px;
+  margin-bottom:12px;
+  font-size:12px;
+  color:#7a2e0e;
+}
+.validation-box.ok{
+  background:#ecfdf3;
+  border-color:#abefc6;
+  color:#05603a;
+}
+.badge{
+  display:inline-block;
+  border-radius:999px;
+  background:var(--soft);
+  padding:2px 7px;
+  font-size:11px;
+  color:#475467;
+}
+.summary{color:#475467;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:420px}
+.spacer{flex:1}
+.meta{font-size:12px;color:var(--muted)}
+@media(max-width:980px){
+  .workspace{grid-template-columns:1fr;overflow:auto}
+  .panel{min-height:440px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div>
+      <h1>Scenario Editor</h1>
+      <div class="sub">Command定義に基づくCSVシナリオ編集</div>
+    </div>
+    <div id="globalStatus" class="meta">Command定義未読込</div>
+  </header>
+
+  <div class="toolbar">
+    <label class="file-btn">
+      <button>Command定義を読込</button>
+      <input id="definitionFile" type="file" accept=".csv,text/csv">
+    </label>
+
+    <label class="file-btn">
+      <button>Scenario CSVを読込</button>
+      <input id="scenarioFile" type="file" accept=".csv,text/csv">
+    </label>
+
+    <button id="validateBtn">全体を検証</button>
+    <div class="spacer"></div>
+    <button id="exportBtn" class="primary">Scenario CSVを保存</button>
+  </div>
+
+  <div class="workspace">
+    <section class="panel scenario-panel">
+      <div class="panel-header">
+        <h2>Scenario</h2>
+        <span id="rowCount" class="badge">0 rows</span>
+      </div>
+
+      <div class="row-actions">
+        <button id="addBtn">＋ 追加</button>
+        <button id="duplicateBtn">複製</button>
+        <button id="deleteBtn" class="danger">削除</button>
+        <button id="upBtn">↑ 上へ</button>
+        <button id="downBtn">↓ 下へ</button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="col-no">#</th>
+              <th class="col-time">Time</th>
+              <th class="col-command">Command</th>
+              <th>Arguments</th>
+              <th class="col-status">Status</th>
+            </tr>
+          </thead>
+          <tbody id="scenarioBody"></tbody>
+        </table>
+        <div id="tableEmpty" class="empty">Command定義を読み込み、行を追加してください。</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Inspector</h2>
+        <span id="selectedLabel" class="badge">未選択</span>
+      </div>
+      <div id="inspector" class="panel-body inspector">
+        <div class="empty">左のScenarioから行を選択してください。</div>
+
+        <div class="section" id="repositorySection">
+          <div class="section-title">Repositories</div>
+          <div id="repositoryList"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+const state = {
+  definitions: new Map(),
+  definitionOrder: [],
+  repositories: new Map(),
+  rows: [],
+  selectedIndex: -1
+};
+
+const $ = (id) => document.getElementById(id);
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let i = 0;
+  let quoted = false;
+
+  while (i < text.length) {
+    const ch = text[i];
+
+    if (quoted) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i += 2;
+          continue;
+        }
+        quoted = false;
+        i++;
+        continue;
+      }
+      field += ch;
+      i++;
+      continue;
+    }
+
+    if (ch === '"') {
+      quoted = true;
+      i++;
+    } else if (ch === ",") {
+      row.push(field);
+      field = "";
+      i++;
+    } else if (ch === "\r") {
+      if (text[i + 1] === "\n") i++;
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+      i++;
+    } else if (ch === "\n") {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+      i++;
+    } else {
+      field += ch;
+      i++;
+    }
+  }
+
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+
+  return rows.filter(r => r.some(v => v.trim() !== ""));
+}
+
+function csvEscape(value) {
+  const s = value == null ? "" : String(value);
+  if (/[",\r\n]/.test(s)) return '"' + s.replaceAll('"', '""') + '"';
+  return s;
+}
+
+function rowsToObjects(rows) {
+  if (!rows.length) return [];
+  const headers = rows[0].map(h => h.trim());
+  return rows.slice(1).map(values => {
+    const obj = {};
+    headers.forEach((h, i) => obj[h] = values[i] ?? "");
+    return obj;
+  });
+}
+
+function toBoolText(value) {
+  const s = String(value ?? "").trim().toLowerCase();
+  if (s === "true" || s === "1") return "true";
+  if (s === "false" || s === "0") return "false";
+  return "";
+}
+
+function normalizeType(type) {
+  const t = String(type || "String").trim().toLowerCase();
+  if (["float","double","number"].includes(t)) return "Float";
+  if (["int","integer"].includes(t)) return "Int";
+  if (["bool","boolean"].includes(t)) return "Bool";
+  if (["enum"].includes(t)) return "Enum";
+  if (["id"].includes(t) || t.endsWith("id")) return "Id";
+  return "String";
+}
+
+function loadDefinitions(text) {
+  const objects = rowsToObjects(parseCsv(text));
+  const requiredHeaders = ["Command", "ArgIndex", "ArgName", "Type"];
+
+  if (!objects.length) throw new Error("Command定義CSVにデータがありません。");
+  for (const h of requiredHeaders) {
+    if (!(h in objects[0])) throw new Error(`Command定義CSVに '${h}' 列が必要です。`);
+  }
+
+  const defs = new Map();
+  const order = [];
+
+  for (const o of objects) {
+    const command = (o.Command || "").trim();
+    if (!command) continue;
+
+    if (!defs.has(command)) {
+      defs.set(command, { name: command, args: [] });
+      order.push(command);
+    }
+
+    const index = Number(o.ArgIndex);
+    if (!Number.isInteger(index) || index < 1) {
+      throw new Error(`${command}: ArgIndex '${o.ArgIndex}' が不正です。`);
+    }
+
+    const arg = {
+      index,
+      name: (o.ArgName || `Arg${index}`).trim(),
+      type: normalizeType(o.Type),
+      required: String(o.Required || "").trim().toLowerCase() === "true",
+      source: (o.Source || "").trim(),
+      defaultValue: o.Default ?? "",
+      min: String(o.Min ?? "").trim(),
+      max: String(o.Max ?? "").trim(),
+      options: String(o.Options ?? "")
+        .split("|")
+        .map(v => v.trim())
+        .filter(Boolean)
+    };
+
+    defs.get(command).args.push(arg);
+  }
+
+  for (const def of defs.values()) {
+    def.args.sort((a,b) => a.index - b.index);
+    const seen = new Set();
+    for (const arg of def.args) {
+      if (seen.has(arg.index)) throw new Error(`${def.name}: ArgIndex ${arg.index} が重複しています。`);
+      seen.add(arg.index);
+    }
+  }
+
+  state.definitions = defs;
+  state.definitionOrder = order;
+
+  const sources = new Set();
+  for (const def of defs.values()) {
+    for (const arg of def.args) if (arg.source) sources.add(arg.source);
+  }
+  for (const source of sources) {
+    if (!state.repositories.has(source)) {
+      state.repositories.set(source, { ids: [], fileName: "", loaded: false });
+    }
+  }
+
+  for (const row of state.rows) {
+    if (!state.definitions.has(row.command)) {
+      row.command = order[0] || "";
+      row.args = createDefaultArgs(row.command);
+    }
+  }
+
+  $("globalStatus").textContent = `${defs.size} commands loaded`;
+  renderAll();
+}
+
+function createDefaultArgs(commandName) {
+  const def = state.definitions.get(commandName);
+  if (!def) return [];
+  const maxIndex = def.args.reduce((m,a) => Math.max(m,a.index), 0);
+  const args = Array(maxIndex).fill("");
+  for (const arg of def.args) {
+    args[arg.index - 1] = arg.defaultValue ?? "";
+  }
+  return args;
+}
+
+function loadRepository(sourceName, text, fileName) {
+  const rows = parseCsv(text);
+  if (!rows.length) throw new Error("Repository CSVが空です。");
+
+  const headers = rows[0].map(h => h.trim());
+  let idIndex = headers.findIndex(h => ["id","Id","ID"].includes(h));
+  if (idIndex < 0) idIndex = 0;
+
+  const ids = rows.slice(1)
+    .map(r => (r[idIndex] ?? "").trim())
+    .filter(Boolean);
+
+  const duplicates = ids.filter((v, i) => ids.indexOf(v) !== i);
+  if (duplicates.length) {
+    throw new Error(`${sourceName}: IDが重複しています: ${[...new Set(duplicates)].join(", ")}`);
+  }
+
+  state.repositories.set(sourceName, {
+    ids,
+    fileName,
+    loaded: true
+  });
+
+  renderAll();
+}
+
+function importScenario(text) {
+  if (!state.definitions.size) {
+    throw new Error("先にCommand定義CSVを読み込んでください。");
+  }
+
+  const rows = parseCsv(text);
+  if (!rows.length) throw new Error("Scenario CSVが空です。");
+
+  const headers = rows[0].map(h => h.trim());
+  const timeIndex = headers.indexOf("Time");
+  const commandIndex = headers.indexOf("Command");
+
+  if (timeIndex < 0 || commandIndex < 0) {
+    throw new Error("Scenario CSVには Time と Command 列が必要です。");
+  }
+
+  const argIndexes = headers
+    .map((h, i) => {
+      const m = /^Arg(\d+)$/i.exec(h);
+      return m ? { argNo: Number(m[1]), col: i } : null;
+    })
+    .filter(Boolean)
+    .sort((a,b) => a.argNo - b.argNo);
+
+  state.rows = rows.slice(1)
+    .filter(r => r.some(v => String(v).trim() !== ""))
+    .map(r => {
+      const args = [];
+      for (const a of argIndexes) args[a.argNo - 1] = r[a.col] ?? "";
+      return {
+        time: r[timeIndex] ?? "",
+        command: (r[commandIndex] ?? "").trim(),
+        args
+      };
+    });
+
+  state.selectedIndex = state.rows.length ? 0 : -1;
+  renderAll();
+}
+
+function validateRow(row) {
+  const errors = [];
+
+  const time = Number(row.time);
+  if (String(row.time).trim() === "" || !Number.isFinite(time) || time < 0) {
+    errors.push("Time は0以上の数値で指定してください。");
+  }
+
+  const def = state.definitions.get(row.command);
+  if (!def) {
+    errors.push(`未定義のCommandです: ${row.command || "(empty)"}`);
+    return errors;
+  }
+
+  for (const arg of def.args) {
+    const raw = String(row.args[arg.index - 1] ?? "").trim();
+
+    if (arg.required && raw === "") {
+      errors.push(`${arg.name} は必須です。`);
+      continue;
+    }
+    if (raw === "") continue;
+
+    if (arg.type === "Float") {
+      const n = Number(raw);
+      if (!Number.isFinite(n)) {
+        errors.push(`${arg.name} は数値で指定してください。`);
+        continue;
+      }
+      if (arg.min !== "" && n < Number(arg.min)) errors.push(`${arg.name} は ${arg.min} 以上にしてください。`);
+      if (arg.max !== "" && n > Number(arg.max)) errors.push(`${arg.name} は ${arg.max} 以下にしてください。`);
+    }
+
+    if (arg.type === "Int") {
+      const n = Number(raw);
+      if (!Number.isInteger(n)) {
+        errors.push(`${arg.name} は整数で指定してください。`);
+        continue;
+      }
+      if (arg.min !== "" && n < Number(arg.min)) errors.push(`${arg.name} は ${arg.min} 以上にしてください。`);
+      if (arg.max !== "" && n > Number(arg.max)) errors.push(`${arg.name} は ${arg.max} 以下にしてください。`);
+    }
+
+    if (arg.type === "Bool" && toBoolText(raw) === "") {
+      errors.push(`${arg.name} は true / false で指定してください。`);
+    }
+
+    if (arg.type === "Enum" && arg.options.length && !arg.options.includes(raw)) {
+      errors.push(`${arg.name} に未定義の値 '${raw}' が指定されています。`);
+    }
+
+    if (arg.source) {
+      const repo = state.repositories.get(arg.source);
+      if (!repo || !repo.loaded) {
+        errors.push(`Repository '${arg.source}' が読み込まれていません。`);
+      } else if (!repo.ids.includes(raw)) {
+        errors.push(`${arg.name}: '${raw}' は ${arg.source} に存在しません。`);
+      }
+    }
+  }
+
+  return errors;
+}
+
+function validateAll(showDialog = false) {
+  const all = state.rows.map((row, index) => ({
+    index,
+    errors: validateRow(row)
+  }));
+
+  const invalid = all.filter(x => x.errors.length);
+  renderAll();
+
+  if (showDialog) {
+    if (!invalid.length) {
+      alert("Validation OK: エラーはありません。");
+    } else {
+      const message = invalid
+        .map(x => `Row ${x.index + 1}\n- ${x.errors.join("\n- ")}`)
+        .join("\n\n");
+      alert(`Validation failed\n\n${message}`);
+    }
+  }
+
+  return invalid;
+}
+
+function renderAll() {
+  renderTable();
+  renderInspector();
+  renderRepositories();
+  $("rowCount").textContent = `${state.rows.length} rows`;
+
+  const invalidCount = state.rows.filter(r => validateRow(r).length > 0).length;
+  $("globalStatus").textContent = state.definitions.size
+    ? `${state.definitions.size} commands / ${invalidCount} invalid rows`
+    : "Command定義未読込";
+}
+
+function renderTable() {
+  const body = $("scenarioBody");
+  body.innerHTML = "";
+
+  $("tableEmpty").style.display = state.rows.length ? "none" : "block";
+
+  state.rows.forEach((row, index) => {
+    const tr = document.createElement("tr");
+    if (index === state.selectedIndex) tr.classList.add("selected");
+    tr.addEventListener("click", () => {
+      state.selectedIndex = index;
+      renderAll();
+    });
+
+    const errors = validateRow(row);
+
+    const summary = buildSummary(row);
+
+    tr.innerHTML = `
+      <td class="col-no">${index + 1}</td>
+      <td>${escapeHtml(row.time)}</td>
+      <td>${escapeHtml(row.command)}</td>
+      <td><div class="summary" title="${escapeHtml(summary)}">${escapeHtml(summary)}</div></td>
+      <td class="${errors.length ? "status-error" : "status-ok"}">${errors.length ? "Error" : "OK"}</td>
+    `;
+    body.appendChild(tr);
+  });
+}
+
+function buildSummary(row) {
+  const def = state.definitions.get(row.command);
+  if (!def) return row.args.filter(Boolean).join(", ");
+
+  return def.args
+    .map(arg => {
+      const value = row.args[arg.index - 1];
+      return value !== undefined && String(value) !== "" ? `${arg.name}=${value}` : null;
+    })
+    .filter(Boolean)
+    .join(", ");
+}
+
+function renderInspector() {
+  const inspector = $("inspector");
+  const repoSection = document.createElement("div");
+  repoSection.className = "section";
+  repoSection.id = "repositorySection";
+  repoSection.innerHTML = `<div class="section-title">Repositories</div><div id="repositoryList"></div>`;
+
+  if (state.selectedIndex < 0 || !state.rows[state.selectedIndex]) {
+    inspector.innerHTML = `<div class="empty">左のScenarioから行を選択してください。</div>`;
+    inspector.appendChild(repoSection);
+    $("selectedLabel").textContent = "未選択";
+    return;
+  }
+
+  const row = state.rows[state.selectedIndex];
+  const errors = validateRow(row);
+  $("selectedLabel").textContent = `Row ${state.selectedIndex + 1}`;
+
+  inspector.innerHTML = "";
+
+  const validation = document.createElement("div");
+  validation.className = "validation-box" + (errors.length ? "" : " ok");
+  validation.innerHTML = errors.length
+    ? `<strong>${errors.length} error(s)</strong><br>${errors.map(escapeHtml).join("<br>")}`
+    : "Validation OK";
+  inspector.appendChild(validation);
+
+  inspector.appendChild(makeField("Time", true, () => {
+    const input = document.createElement("input");
+    input.type = "number";
+    input.min = "0";
+    input.step = "any";
+    input.value = row.time;
+    input.addEventListener("input", () => {
+      row.time = input.value;
+      renderTable();
+    });
+    input.addEventListener("change", () => {
+      row.time = input.value;
+      renderAll();
+    });
+    return input;
+  }));
+
+  inspector.appendChild(makeField("Command", true, () => {
+    const select = document.createElement("select");
+    select.appendChild(new Option("-- select --", ""));
+    for (const name of state.definitionOrder) select.appendChild(new Option(name, name));
+    select.value = row.command;
+    select.addEventListener("change", () => {
+      row.command = select.value;
+      row.args = createDefaultArgs(row.command);
+      renderAll();
+    });
+    return select;
+  }));
+
+  const def = state.definitions.get(row.command);
+  if (def) {
+    for (const arg of def.args) {
+      inspector.appendChild(renderArgField(row, arg));
+    }
+  }
+
+  inspector.appendChild(repoSection);
+}
+
+function refreshValidationBox() {
+  renderAll();
+}
+
+function makeField(label, required, controlFactory, helpText = "") {
+  const wrap = document.createElement("div");
+  wrap.className = "field";
+
+  const lab = document.createElement("label");
+  lab.innerHTML = escapeHtml(label) + (required ? `<span class="required">*</span>` : "");
+  wrap.appendChild(lab);
+
+  wrap.appendChild(controlFactory());
+
+  if (helpText) {
+    const help = document.createElement("div");
+    help.className = "help";
+    help.textContent = helpText;
+    wrap.appendChild(help);
+  }
+  return wrap;
+}
+
+function renderArgField(row, arg) {
+  let help = `Arg${arg.index} / ${arg.type}`;
+  if (arg.source) help += ` / source: ${arg.source}`;
+  if (arg.min !== "" || arg.max !== "") {
+    help += ` / range: ${arg.min || "-∞"} .. ${arg.max || "∞"}`;
+  }
+
+  return makeField(arg.name, arg.required, () => {
+    let input;
+    const current = String(row.args[arg.index - 1] ?? "");
+
+    if (arg.source) {
+      input = document.createElement("select");
+      input.appendChild(new Option("-- select --", ""));
+      const repo = state.repositories.get(arg.source);
+      if (repo?.loaded) {
+        for (const id of repo.ids) input.appendChild(new Option(id, id));
+      } else {
+        input.appendChild(new Option(`Repository '${arg.source}' を読み込んでください`, ""));
+      }
+      input.value = current;
+      input.disabled = !repo?.loaded;
+    } else if (arg.type === "Bool") {
+      input = document.createElement("select");
+      input.appendChild(new Option("-- select --", ""));
+      input.appendChild(new Option("true", "true"));
+      input.appendChild(new Option("false", "false"));
+      input.value = toBoolText(current);
+    } else if (arg.type === "Enum" && arg.options.length) {
+      input = document.createElement("select");
+      input.appendChild(new Option("-- select --", ""));
+      for (const option of arg.options) input.appendChild(new Option(option, option));
+      input.value = current;
+    } else {
+      input = document.createElement("input");
+      input.type = ["Float","Int"].includes(arg.type) ? "number" : "text";
+      if (arg.type === "Int") input.step = "1";
+      if (arg.type === "Float") input.step = "any";
+      if (arg.min !== "") input.min = arg.min;
+      if (arg.max !== "") input.max = arg.max;
+      input.value = current;
+    }
+
+    input.addEventListener("input", () => {
+      row.args[arg.index - 1] = input.value;
+      renderTable();
+    });
+    input.addEventListener("change", () => {
+      row.args[arg.index - 1] = input.value;
+      renderAll();
+    });
+    return input;
+  }, help);
+}
+
+function renderRepositories() {
+  const container = $("repositoryList");
+  if (!container) return;
+  container.innerHTML = "";
+
+  const sources = [...state.repositories.keys()].sort();
+  if (!sources.length) {
+    container.innerHTML = `<div class="help">Command定義の Source 列にRepository名を指定すると、ここに表示されます。</div>`;
+    return;
+  }
+
+  for (const source of sources) {
+    const repo = state.repositories.get(source);
+    const row = document.createElement("div");
+    row.className = "repo-row";
+
+    const name = document.createElement("div");
+    name.className = "repo-name";
+    name.textContent = source;
+
+    const status = document.createElement("div");
+    status.className = "repo-status";
+    status.textContent = repo?.loaded
+      ? `${repo.ids.length} IDs / ${repo.fileName}`
+      : "未読込";
+
+    const label = document.createElement("label");
+    label.className = "repo-file";
+    label.innerHTML = `<button>${repo?.loaded ? "再読込" : "読込"}</button><input type="file" accept=".csv,text/csv">`;
+    const input = label.querySelector("input");
+    input.addEventListener("change", async () => {
+      if (!input.files?.[0]) return;
+      try {
+        const file = input.files[0];
+        loadRepository(source, await file.text(), file.name);
+      } catch (e) {
+        alert(e.message || String(e));
+      } finally {
+        input.value = "";
+      }
+    });
+
+    row.append(name, status, label);
+    container.appendChild(row);
+  }
+}
+
+function addRow() {
+  if (!state.definitionOrder.length) {
+    alert("先にCommand定義CSVを読み込んでください。");
+    return;
+  }
+
+  const command = state.definitionOrder[0];
+  const previous = state.rows[state.rows.length - 1];
+  const time = previous ? previous.time : "0";
+
+  state.rows.push({
+    time,
+    command,
+    args: createDefaultArgs(command)
+  });
+  state.selectedIndex = state.rows.length - 1;
+  renderAll();
+}
+
+function duplicateRow() {
+  if (state.selectedIndex < 0) return;
+  const src = state.rows[state.selectedIndex];
+  const copy = {
+    time: src.time,
+    command: src.command,
+    args: [...src.args]
+  };
+  state.rows.splice(state.selectedIndex + 1, 0, copy);
+  state.selectedIndex++;
+  renderAll();
+}
+
+function deleteRow() {
+  if (state.selectedIndex < 0) return;
+  state.rows.splice(state.selectedIndex, 1);
+  if (!state.rows.length) state.selectedIndex = -1;
+  else state.selectedIndex = Math.min(state.selectedIndex, state.rows.length - 1);
+  renderAll();
+}
+
+function moveRow(delta) {
+  const i = state.selectedIndex;
+  const j = i + delta;
+  if (i < 0 || j < 0 || j >= state.rows.length) return;
+  [state.rows[i], state.rows[j]] = [state.rows[j], state.rows[i]];
+  state.selectedIndex = j;
+  renderAll();
+}
+
+function exportScenario() {
+  if (!state.rows.length) {
+    alert("Scenarioに行がありません。");
+    return;
+  }
+
+  const invalid = validateAll(false);
+  if (invalid.length) {
+    const first = invalid[0];
+    state.selectedIndex = first.index;
+    renderAll();
+    alert(`Validation errorがあります。Row ${first.index + 1} を確認してください。`);
+    return;
+  }
+
+  let maxArgs = 0;
+  for (const def of state.definitions.values()) {
+    for (const arg of def.args) maxArgs = Math.max(maxArgs, arg.index);
+  }
+
+  const headers = ["Time", "Command"];
+  for (let i = 1; i <= maxArgs; i++) headers.push(`Arg${i}`);
+
+  const lines = [headers.map(csvEscape).join(",")];
+
+  for (const row of state.rows) {
+    const values = [row.time, row.command];
+    for (let i = 0; i < maxArgs; i++) values.push(row.args[i] ?? "");
+    lines.push(values.map(csvEscape).join(","));
+  }
+
+  const blob = new Blob(["\uFEFF" + lines.join("\r\n")], {
+    type: "text/csv;charset=utf-8"
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "scenario.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+$("definitionFile").addEventListener("change", async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  try {
+    loadDefinitions(await file.text());
+  } catch (err) {
+    alert(err.message || String(err));
+  } finally {
+    e.target.value = "";
+  }
+});
+
+$("scenarioFile").addEventListener("change", async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  try {
+    importScenario(await file.text());
+  } catch (err) {
+    alert(err.message || String(err));
+  } finally {
+    e.target.value = "";
+  }
+});
+
+$("addBtn").addEventListener("click", addRow);
+$("duplicateBtn").addEventListener("click", duplicateRow);
+$("deleteBtn").addEventListener("click", deleteRow);
+$("upBtn").addEventListener("click", () => moveRow(-1));
+$("downBtn").addEventListener("click", () => moveRow(1));
+$("validateBtn").addEventListener("click", () => validateAll(true));
+$("exportBtn").addEventListener("click", exportScenario);
+
+renderAll();
+</script>
+</body>
+</html>

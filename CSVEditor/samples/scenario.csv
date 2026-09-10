@@ -1,0 +1,4 @@
+﻿Time,Command,Arg1,Arg2,Arg3
+0.0,PlaySound,Warning01,0.8,
+1.5,PlayLight,PedestrianAlert,true,
+3.0,ShowImage,WarningImage,Left,2.0
