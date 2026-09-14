@@ -19,7 +19,7 @@ MonoBehaviour:
     width: 1918
     height: 980
   m_ShowMode: 4
-  m_Title: Hierarchy
+  m_Title: Project
   m_RootView: {fileID: 2}
   m_MinSize: {x: 875, y: 300}
   m_MaxSize: {x: 10000, y: 10000}
@@ -246,7 +246,7 @@ MonoBehaviour:
     serializedVersion: 2
     x: 0
     y: 0
-    width: 890
+    width: 641
     height: 567
   m_MinSize: {x: 202, y: 226}
   m_MaxSize: {x: 4002, y: 4026}
@@ -272,9 +272,9 @@ MonoBehaviour:
   m_Children: []
   m_Position:
     serializedVersion: 2
-    x: 890
+    x: 641
     y: 0
-    width: 328
+    width: 577
     height: 567
   m_MinSize: {x: 232, y: 276}
   m_MaxSize: {x: 10002, y: 10026}
@@ -1759,7 +1759,7 @@ MonoBehaviour:
     serializedVersion: 2
     x: 1
     y: 24
-    width: 888
+    width: 639
     height: 541
   m_SerializedDataModeController:
     m_DataMode: 0
@@ -1780,7 +1780,7 @@ MonoBehaviour:
   m_ShowGizmos: 0
   m_TargetDisplay: 0
   m_ClearColor: {r: 0, g: 0, b: 0, a: 0}
-  m_TargetSize: {x: 888, y: 500}
+  m_TargetSize: {x: 639, y: 359}
   m_TextureFilterMode: 0
   m_TextureHideFlags: 61
   m_RenderIMGUI: 1
@@ -1795,10 +1795,10 @@ MonoBehaviour:
     m_VRangeLocked: 0
     hZoomLockedByDefault: 0
     vZoomLockedByDefault: 0
-    m_HBaseRangeMin: -444
-    m_HBaseRangeMax: 444
-    m_VBaseRangeMin: -250
-    m_VBaseRangeMax: 250
+    m_HBaseRangeMin: -319.5
+    m_HBaseRangeMax: 319.5
+    m_VBaseRangeMin: -179.5
+    m_VBaseRangeMax: 179.5
     m_HAllowExceedBaseRangeMin: 1
     m_HAllowExceedBaseRangeMax: 1
     m_VAllowExceedBaseRangeMin: 1
@@ -1816,23 +1816,23 @@ MonoBehaviour:
       serializedVersion: 2
       x: 0
       y: 21
-      width: 888
+      width: 639
       height: 520
     m_Scale: {x: 1, y: 1}
-    m_Translation: {x: 444, y: 260}
+    m_Translation: {x: 319.5, y: 260}
     m_MarginLeft: 0
     m_MarginRight: 0
     m_MarginTop: 0
     m_MarginBottom: 0
     m_LastShownAreaInsideMargins:
       serializedVersion: 2
-      x: -444
+      x: -319.5
       y: -260
-      width: 888
+      width: 639
       height: 520
     m_MinimalGUI: 1
   m_defaultScale: 1
-  m_LastWindowPixelSize: {x: 888, y: 541}
+  m_LastWindowPixelSize: {x: 639, y: 541}
   m_ClearInEditMode: 1
   m_NoCameraWarning: 1
   m_LowResolutionForAspectRatios: 01000000000000000000
@@ -2865,9 +2865,9 @@ MonoBehaviour:
     m_TextWithWhitespace: "Project\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 891
+    x: 642
     y: 24
-    width: 326
+    width: 575
     height: 541
   m_SerializedDataModeController:
     m_DataMode: 0
@@ -2893,7 +2893,7 @@ MonoBehaviour:
     m_SkipHidden: 0
     m_SearchArea: 1
     m_Folders:
-    - Assets/CsvRuntimeEditor/Prefabs
+    - Assets/Repository
     m_Globs: []
     m_ProductIds: 
     m_AnyWithAssetOrigin: 0
@@ -2903,24 +2903,24 @@ MonoBehaviour:
   m_ViewMode: 1
   m_StartGridSize: 64
   m_LastFolders:
-  - Assets/CsvRuntimeEditor/Prefabs
+  - Assets/Repository
   m_LastFoldersGridSize: -1
   m_LastProjectPath: C:\Users\tetsuro\xr-ux-simulator
   m_LockTracker:
     m_IsLocked: 0
   m_LastLocalAssetsSearchArea: 1
   m_FolderTreeState:
-    scrollPos: {x: 0, y: 111}
+    scrollPos: {x: 0, y: 0}
     m_SelectedIDs:
-    - m_Data: 67848
+    - m_Data: 69686
     m_LastClickedID:
-      m_Data: 67848
+      m_Data: 69686
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 67120
-    - m_Data: 67122
-    - m_Data: 67124
-    - m_Data: 67126
+    - m_Data: 67240
+    - m_Data: 67242
+    - m_Data: 67244
+    - m_Data: 67246
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -2954,10 +2954,10 @@ MonoBehaviour:
       m_Data: 0
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 67120
-    - m_Data: 67122
-    - m_Data: 67124
-    - m_Data: 67126
+    - m_Data: 67240
+    - m_Data: 67242
+    - m_Data: 67244
+    - m_Data: 67246
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -2985,9 +2985,10 @@ MonoBehaviour:
       m_Icon: {fileID: 0}
       m_ResourceFile: 
   m_ListAreaState:
-    m_SelectedInstanceIDs: []
+    m_SelectedInstanceIDs:
+    - m_Data: 69686
     m_LastClickedEntityId:
-      m_Data: 0
+      m_Data: 69686
     m_HadKeyboardFocusLastEvent: 0
     m_ExpandedInstanceIDs: []
     m_RenameOverlay:
@@ -3041,9 +3042,9 @@ MonoBehaviour:
     m_TextWithWhitespace: "Console\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 1142
+    x: 893
     y: 444
-    width: 326
+    width: 575
     height: 541
   m_SerializedDataModeController:
     m_DataMode: 0
@@ -3104,7 +3105,7 @@ MonoBehaviour:
     m_PrefName: Preview_InspectorPreview
   m_LastInspectedObjectEntityId:
     m_Data: 0
-  m_LastVerticalScrollValue: 67
+  m_LastVerticalScrollValue: 0
   m_GlobalObjectId: 
   m_InspectorMode: 0
   m_LockTracker:

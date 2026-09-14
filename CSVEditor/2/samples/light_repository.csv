@@ -1,0 +1,3 @@
+﻿Id,Path
+PedestrianAlert,Lighting/pedestrian_alert.csv
+LaneWarning,Lighting/lane_warning.csv
