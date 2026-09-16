@@ -1,0 +1,2241 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scenario Editor</title>
+<style>
+:root{
+  --bg:#f5f7fa;
+  --panel:#ffffff;
+  --line:#d9dee7;
+  --text:#20242a;
+  --muted:#6b7280;
+  --accent:#2563eb;
+  --danger:#b42318;
+  --ok:#067647;
+  --warn:#b54708;
+  --soft:#eef2f7;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
+  color:var(--text);
+  background:var(--bg);
+}
+button,input,select{font:inherit}
+button{
+  border:1px solid var(--line);
+  background:#fff;
+  border-radius:7px;
+  padding:7px 11px;
+  cursor:pointer;
+}
+button:hover{background:#f8fafc}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+button.danger{color:var(--danger)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.app{
+  height:100vh;
+  display:grid;
+  grid-template-rows:auto auto 1fr;
+}
+header{
+  background:#fff;
+  border-bottom:1px solid var(--line);
+  padding:14px 18px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+}
+header h1{font-size:18px;margin:0}
+header .sub{font-size:12px;color:var(--muted);margin-top:3px}
+.toolbar{
+  background:#fff;
+  border-bottom:1px solid var(--line);
+  padding:10px 18px;
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  align-items:center;
+}
+.repo-group{
+  margin-bottom:14px;
+}
+.repo-row{
+  grid-template-columns:180px minmax(0,1fr) auto auto;
+}
+.repo-item{
+  grid-template-columns:minmax(180px,1fr) minmax(260px,2fr) 110px auto;
+}
+@media(max-width:980px){
+  .repo-row,
+  .repo-item{
+    grid-template-columns:1fr;
+  }
+}
+.file-btn{position:relative;overflow:hidden}
+.file-btn input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.workspace{
+  min-height:0;
+  display:grid;
+  grid-template-columns:minmax(520px,1.3fr) minmax(360px,.7fr);
+  gap:12px;
+  padding:12px;
+}
+.panel{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:10px;
+  min-height:0;
+  overflow:hidden;
+}
+.panel-header{
+  padding:10px 12px;
+  border-bottom:1px solid var(--line);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
+.editor-tabs{display:flex;align-items:stretch;gap:0;overflow-x:auto;min-width:0}
+.editor-tab{border:none;border-right:1px solid var(--line);border-radius:0;background:transparent;padding:11px 15px 9px;color:#667085;font-weight:600;white-space:nowrap;border-bottom:3px solid transparent}
+.editor-tab:hover{background:#f8fafc}
+.editor-tab.active{color:var(--accent);background:#fff;border-bottom-color:var(--accent)}
+.editor-header{padding:0;align-items:stretch}
+.editor-header-right{margin-left:auto;display:flex;align-items:center;padding:0 12px}
+.editor-toolbar{padding:8px 10px;border-bottom:1px solid var(--line);display:flex;gap:6px;flex-wrap:wrap;align-items:center;min-height:48px}
+.editor-content{min-height:0;height:100%}
+.editor-content.hidden{display:none}
+.repository-editor{height:100%;min-height:0;overflow:auto;padding:12px}
+.repository-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:8px}
+.repository-table{width:100%;border-collapse:collapse;font-size:13px}
+.repository-table th,.repository-table td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+.repository-table th{background:#f8fafc;color:#475467;font-weight:600;position:sticky;top:0;z-index:1}
+.repository-table tr:last-child td{border-bottom:none}
+.repository-meta{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;color:var(--muted);font-size:12px}
+.repository-empty{padding:34px 18px;text-align:center;color:var(--muted)}
+
+.panel-header h2{font-size:14px;margin:0}
+.panel-body{padding:12px}
+.scenario-panel{display:grid;grid-template-rows:auto auto 1fr}
+
+
+.direct-table{
+  table-layout:fixed;
+  width:max-content;
+  min-width:100%;
+  border-collapse:separate;
+  border-spacing:0;
+}
+.direct-table th,
+.direct-table td{
+  vertical-align:middle;
+  border-right:1px solid var(--line);
+  border-bottom:1px solid var(--line);
+  padding:0;
+  background:#fff;
+}
+.direct-table th{
+  height:34px;
+  padding:0 8px;
+  background:#f8fafc;
+  color:#475467;
+  font-weight:600;
+  white-space:nowrap;
+}
+.direct-table th:first-child,
+.direct-table td:first-child{
+  border-left:1px solid var(--line);
+}
+.direct-table thead tr:first-child th{
+  border-top:1px solid var(--line);
+}
+.grid-col-no{width:46px;min-width:46px;max-width:46px}
+.grid-col-time{width:92px;min-width:92px;max-width:92px}
+.grid-col-command{width:180px;min-width:180px;max-width:180px}
+.grid-col-arg{width:170px;min-width:170px;max-width:170px}
+.grid-col-status{width:92px;min-width:92px;max-width:92px}
+
+.grid-cell{
+  height:54px;
+  display:grid;
+  align-items:stretch;
+}
+.grid-edit-cell{
+  grid-template-rows:18px 1fr;
+  padding:4px 6px 5px;
+}
+.grid-cell-label{
+  font-size:10px;
+  line-height:18px;
+  color:#667085;
+  font-weight:600;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.grid-control{
+  width:100%;
+  height:28px;
+  min-width:0;
+  border:none;
+  border-radius:0;
+  padding:3px 5px;
+  background:transparent;
+  color:var(--text);
+  outline:none;
+}
+.grid-control:focus{
+  outline:2px solid #84adff;
+  outline-offset:-2px;
+  background:#fff;
+}
+select.grid-control{
+  padding-right:20px;
+  text-overflow:ellipsis;
+}
+.grid-multiselect{
+  position:relative;
+  width:100%;
+  min-width:0;
+}
+.grid-multiselect summary{
+  list-style:none;
+  cursor:pointer;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.grid-multiselect summary::-webkit-details-marker{display:none}
+.grid-multiselect-panel{
+  position:absolute;
+  z-index:50;
+  top:30px;
+  left:0;
+  min-width:100%;
+  max-height:220px;
+  overflow:auto;
+  padding:6px;
+  border:1px solid var(--line);
+  border-radius:7px;
+  background:#fff;
+  box-shadow:0 10px 24px rgba(16,24,40,.14);
+}
+.grid-multiselect-option{
+  display:flex;
+  align-items:center;
+  gap:7px;
+  padding:5px 6px;
+  white-space:nowrap;
+}
+.grid-multiselect-option:hover{background:#f8fafc}
+.grid-multiselect-option input{margin:0}
+.grid-edit-cell.invalid{
+  background:#fff4f3;
+}
+.grid-edit-cell.invalid .grid-control{
+  color:#b42318;
+}
+.grid-empty{
+  height:54px;
+  background:#fafafa;
+}
+.grid-simple-cell{
+  height:54px;
+  display:flex;
+  align-items:center;
+  padding:0 8px;
+}
+.grid-row-selected td{
+  background:#eef4ff;
+}
+.grid-row-selected .grid-empty{
+  background:#eef4ff;
+}
+.grid-row-selected .grid-control{
+  background:transparent;
+}
+.row-status{
+  font-weight:600;
+  cursor:default;
+}
+.row-status.ok{color:var(--ok)}
+.row-status.error{color:var(--danger)}
+
+.row-actions{
+  padding:8px 10px;
+  border-bottom:1px solid var(--line);
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+}
+.table-wrap{overflow:auto;min-height:0;background:#fff}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{
+  border-bottom:1px solid var(--line);
+  padding:8px 9px;
+  text-align:left;
+  vertical-align:middle;
+}
+th{
+  position:sticky;
+  top:0;
+  background:#f8fafc;
+  z-index:1;
+  font-weight:600;
+  color:#475467;
+}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:#f8fafc}
+tbody tr.selected{background:#eef4ff}
+.col-no{width:48px;color:var(--muted)}
+.col-time{width:90px}
+.col-command{width:160px}
+.col-status{width:90px}
+.status-ok{color:var(--ok);font-weight:600}
+.status-error{color:var(--danger);font-weight:600}
+.empty{
+  padding:34px 18px;
+  text-align:center;
+  color:var(--muted);
+}
+.inspector{
+  height:100%;
+  overflow:auto;
+}
+.field{
+  margin-bottom:14px;
+}
+.field label{
+  display:block;
+  font-size:12px;
+  font-weight:600;
+  color:#475467;
+  margin-bottom:5px;
+}
+.field .required{color:var(--danger);margin-left:3px}
+.field input,.field select{
+  width:100%;
+  border:1px solid #cfd5df;
+  border-radius:7px;
+  padding:8px 9px;
+  background:#fff;
+}
+.field input:focus,.field select:focus{
+  outline:2px solid #c7d7fe;
+  border-color:var(--accent);
+}
+.help{font-size:11px;color:var(--muted);margin-top:4px}
+.field-error{font-size:11px;color:var(--danger);margin-top:4px}
+.section{
+  margin-top:18px;
+  border-top:1px solid var(--line);
+  padding-top:14px;
+}
+.section-title{
+  font-size:12px;
+  font-weight:700;
+  margin-bottom:8px;
+  color:#475467;
+}
+.repo-group{
+  border:1px solid var(--line);
+  border-radius:8px;
+  margin-bottom:9px;
+  overflow:hidden;
+}
+.repo-row{
+  display:grid;
+  grid-template-columns:140px minmax(0,1fr) auto auto;
+  align-items:center;
+  gap:7px;
+  padding:8px;
+  background:#fff;
+}
+.repo-name{font-size:12px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+.repo-status{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.repo-file{position:relative;overflow:hidden}
+.repo-file input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.repo-items{
+  border-top:1px solid var(--line);
+  background:#f8fafc;
+}
+.repo-items summary{
+  cursor:pointer;
+  padding:8px 10px;
+  font-size:12px;
+  color:#475467;
+  user-select:none;
+}
+.repo-item{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(140px,1fr) auto auto;
+  gap:10px;
+  align-items:center;
+  padding:7px 10px;
+  border-top:1px solid #e4e7ec;
+  background:#fff;
+}
+.repo-item-id{
+  font-size:12px;
+  font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+  overflow-wrap:anywhere;
+}
+.repo-item-meta{
+  font-size:11px;
+  color:var(--muted);
+  white-space:nowrap;
+}
+.repo-delete{
+  padding:4px 8px;
+  font-size:11px;
+  color:var(--danger);
+}
+.repo-item-actions{
+  display:flex;
+  gap:5px;
+  flex-wrap:wrap;
+}
+.repo-small-btn{
+  padding:4px 8px;
+  font-size:11px;
+}
+.repo-add-row{
+  display:flex;
+  justify-content:flex-end;
+  padding:8px 10px;
+  border-top:1px solid #e4e7ec;
+  background:#f8fafc;
+}
+.validation-box{
+  background:#fff6ed;
+  border:1px solid #fedf89;
+  border-radius:8px;
+  padding:9px 10px;
+  margin-bottom:12px;
+  font-size:12px;
+  color:#7a2e0e;
+}
+.validation-box.ok{
+  background:#ecfdf3;
+  border-color:#abefc6;
+  color:#05603a;
+}
+.badge{
+  display:inline-block;
+  border-radius:999px;
+  background:var(--soft);
+  padding:2px 7px;
+  font-size:11px;
+  color:#475467;
+}
+.spacer{flex:1}
+.meta{font-size:12px;color:var(--muted)}
+@media(max-width:980px){
+  .workspace{grid-template-columns:1fr;overflow:auto}
+  .panel{min-height:440px}
+}
+</style>
+
+
+<style id="calm-grid-style">
+/* Calm, Excel-like grid: structure comes from alignment and light borders. */
+.direct-table th{
+  background:#f5f6f8;
+  color:#344054;
+  font-weight:600;
+  border-color:#dfe3e8;
+  border-bottom:1px solid #dfe3e8;
+}
+
+.direct-table tbody tr td{
+  background:#fff;
+  border-right:1px solid #e4e7ec;
+  border-bottom:1px solid #e4e7ec;
+}
+
+/* Remove zebra striping and column-specific backgrounds. */
+.direct-table tbody tr:nth-child(even) td,
+td.grid-col-command .grid-edit-cell,
+.grid-row-selected td,
+.grid-row-selected .grid-edit-cell,
+.grid-row-selected .grid-simple-cell,
+.grid-row-selected .grid-empty{
+  background:#fff !important;
+}
+
+/* Minimal selected-row cue: only a left accent. */
+.grid-row-selected td:first-child{
+  box-shadow:inset 3px 0 0 var(--accent);
+}
+
+/* Cell label: no band, no block background. */
+.grid-edit-cell{
+  padding:4px 6px 5px;
+  grid-template-rows:18px 1fr;
+  background:#fff;
+}
+
+.grid-cell-label{
+  display:flex;
+  align-items:center;
+  padding:0;
+  background:transparent;
+  border:none;
+  color:#667085;
+  font-size:10px;
+  font-weight:500;
+  line-height:18px;
+  letter-spacing:0;
+}
+
+/* Values remain visually quiet. */
+.grid-control{
+  height:28px;
+  padding:3px 2px;
+  border:none;
+  border-radius:0;
+  background:transparent;
+  color:#101828;
+  font-weight:400;
+  outline:none;
+}
+
+td.grid-col-command .grid-control{
+  font-weight:500;
+  color:#101828;
+}
+
+.grid-control:hover:not(:disabled){
+  background:#fafbfc;
+}
+
+.grid-control:focus{
+  outline:2px solid #84adff;
+  outline-offset:-2px;
+  background:#fff;
+}
+
+/* Error state: no fill, only a red underline + text. */
+.grid-edit-cell.invalid{
+  background:#fff !important;
+  box-shadow:none;
+}
+
+.grid-edit-cell.invalid .grid-cell-label{
+  background:transparent;
+  color:#b42318;
+  border:none;
+}
+
+.grid-edit-cell.invalid .grid-control{
+  color:#b42318;
+  border-bottom:2px solid #f04438;
+}
+
+/* Status returns to plain text. */
+.row-status,
+.status-pill{
+  display:inline;
+  padding:0;
+  border:none;
+  border-radius:0;
+  background:transparent !important;
+  font-size:12px;
+  font-weight:500;
+}
+
+.row-status.ok,
+.status-pill.ok{
+  color:#067647;
+}
+
+.row-status.error,
+.status-pill.error{
+  color:#b42318;
+}
+
+.status-symbol{
+  display:none;
+}
+
+/* Keep the table dense and regular. */
+.grid-cell,
+.grid-empty,
+.grid-simple-cell{
+  min-height:54px;
+}
+</style>
+
+</head>
+<body>
+<div class="app">
+  <header>
+    <div>
+      <h1>Scenario Editor</h1>
+      <div class="sub">Command定義に基づくCSVシナリオ編集</div>
+    </div>
+    <div id="globalStatus" class="meta">Command定義未読込</div>
+  </header>
+
+  <div class="toolbar">
+    <label class="file-btn">
+      <button>Command定義を読込</button>
+      <input id="definitionFile" type="file" accept=".csv,text/csv">
+    </label>
+
+    <label class="file-btn">
+      <button>Scenario CSVを読込</button>
+      <input id="scenarioFile" type="file" accept=".csv,text/csv">
+    </label>
+
+    <button id="validateBtn">全体を検証</button>
+    <div class="spacer"></div>
+    <button id="exportBtn" class="primary">Scenario CSVを保存</button>
+  </div>
+  <div class="workspace">
+    <section class="panel scenario-panel">
+      <div class="panel-header editor-header">
+        <div id="editorTabs" class="editor-tabs"></div>
+        <div class="editor-header-right">
+          <span id="editorHeaderStatus" class="badge">0 rows</span>
+        </div>
+      </div>
+
+      <div id="scenarioToolbar" class="editor-toolbar">
+        <button id="addBtn">＋ 追加</button>
+        <button id="duplicateBtn">複製</button>
+        <button id="deleteBtn" class="danger">削除</button>
+        <button id="upBtn">↑ 上へ</button>
+        <button id="downBtn">↓ 下へ</button>
+        <span style="width:1px;background:var(--line);margin:0 2px;"></span>
+        <button id="sortTimeAscBtn">Time ↑</button>
+        <button id="sortTimeDescBtn">Time ↓</button>
+        <button id="sortCommandAscBtn">Command ↑</button>
+        <button id="sortCommandDescBtn">Command ↓</button>
+      </div>
+
+      <div id="scenarioContent" class="table-wrap editor-content">
+        <table class="direct-table">
+          <thead id="scenarioHead"></thead>
+          <tbody id="scenarioBody"></tbody>
+        </table>
+        <div id="tableEmpty" class="empty">Command定義を読み込み、行を追加してください。</div>
+      </div>
+
+      <div id="repositoryContent" class="repository-editor editor-content hidden">
+        <div id="repositoryMeta" class="repository-meta"></div>
+        <div id="repositoryTableHost"></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+const state = {
+  definitions: new Map(),
+  definitionOrder: [],
+  repositories: new Map(),
+  rows: [],
+  selectedIndex: -1,
+  timeSortDirection: null,
+  commandSortDirection: null,
+  activeEditor: "scenario"
+};
+
+const $ = (id) => document.getElementById(id);
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let i = 0;
+  let quoted = false;
+
+  while (i < text.length) {
+    const ch = text[i];
+
+    if (quoted) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i += 2;
+          continue;
+        }
+        quoted = false;
+        i++;
+        continue;
+      }
+      field += ch;
+      i++;
+      continue;
+    }
+
+    if (ch === '"') {
+      quoted = true;
+      i++;
+    } else if (ch === ",") {
+      row.push(field);
+      field = "";
+      i++;
+    } else if (ch === "\r") {
+      if (text[i + 1] === "\n") i++;
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+      i++;
+    } else if (ch === "\n") {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+      i++;
+    } else {
+      field += ch;
+      i++;
+    }
+  }
+
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+
+  return rows.filter(r => r.some(v => v.trim() !== ""));
+}
+
+function csvEscape(value) {
+  const s = value == null ? "" : String(value);
+  if (/[",\r\n]/.test(s)) return '"' + s.replaceAll('"', '""') + '"';
+  return s;
+}
+
+function rowsToObjects(rows) {
+  if (!rows.length) return [];
+  const headers = rows[0].map(h => h.trim());
+  return rows.slice(1).map(values => {
+    const obj = {};
+    headers.forEach((h, i) => obj[h] = values[i] ?? "");
+    return obj;
+  });
+}
+
+function toBoolText(value) {
+  const s = String(value ?? "").trim().toLowerCase();
+  if (s === "true" || s === "1") return "true";
+  if (s === "false" || s === "0") return "false";
+  return "";
+}
+
+function normalizeType(type) {
+  const t = String(type || "String").trim().toLowerCase();
+  if (["float","double","number"].includes(t)) return "Float";
+  if (["int","integer"].includes(t)) return "Int";
+  if (["bool","boolean"].includes(t)) return "Bool";
+  if (["enum"].includes(t)) return "Enum";
+  if (["command"].includes(t)) return "Command";
+  if (["repositorykey","repository_key","repo_key"].includes(t)) return "RepositoryKey";
+  if (["id"].includes(t) || t.endsWith("id")) return "RepositoryKey";
+  return "String";
+}
+
+function loadDefinitions(text) {
+  const objects = rowsToObjects(parseCsv(text));
+  const requiredHeaders = ["Command", "ArgIndex", "ArgName", "Type"];
+
+  if (!objects.length) throw new Error("Command定義CSVにデータがありません。");
+  for (const h of requiredHeaders) {
+    if (!(h in objects[0])) throw new Error(`Command定義CSVに '${h}' 列が必要です。`);
+  }
+
+  const defs = new Map();
+  const order = [];
+
+  for (const o of objects) {
+    const command = (o.Command || "").trim();
+    if (!command) continue;
+
+    if (!defs.has(command)) {
+      defs.set(command, { name: command, args: [] });
+      order.push(command);
+    }
+
+    const index = Number(o.ArgIndex);
+    if (!Number.isInteger(index) || index < 1) {
+      throw new Error(`${command}: ArgIndex '${o.ArgIndex}' が不正です。`);
+    }
+
+    const arg = {
+      index,
+      name: (o.ArgName || `Arg${index}`).trim(),
+      memberPath: String(o.MemberPath ?? "").trim(),
+      type: normalizeType(o.Type),
+      required: String(o.Required || "").trim().toLowerCase() === "true",
+      source: (o.Source || "").trim(),
+      defaultValue: o.Default ?? "",
+      min: String(o.Min ?? "").trim(),
+      max: String(o.Max ?? "").trim(),
+      options: String(o.Options ?? "")
+        .split("|")
+        .map(v => v.trim())
+        .filter(Boolean),
+      multiSelect: String(o.MultiSelect || "").trim().toLowerCase() === "true"
+    };
+
+    defs.get(command).args.push(arg);
+  }
+
+  for (const def of defs.values()) {
+    def.args.sort((a,b) => a.index - b.index);
+    const seen = new Set();
+    for (const arg of def.args) {
+      if (seen.has(arg.index)) throw new Error(`${def.name}: ArgIndex ${arg.index} が重複しています。`);
+      seen.add(arg.index);
+    }
+  }
+
+  state.definitions = defs;
+  state.definitionOrder = order;
+
+  const sources = new Set();
+  for (const def of defs.values()) {
+    for (const arg of def.args) if (arg.source) sources.add(arg.source);
+  }
+  for (const existing of [...state.repositories.keys()]) {
+    if (!sources.has(existing)) {
+      state.repositories.delete(existing);
+    }
+  }
+
+  for (const source of sources) {
+    if (!state.repositories.has(source)) {
+      state.repositories.set(source, { ids: [], fileName: "", loaded: false });
+    }
+  }
+
+  if (state.activeEditor !== "scenario" &&
+      !state.repositories.has(state.activeEditor)) {
+    state.activeEditor = "scenario";
+  }
+
+  for (const row of state.rows) {
+    if (!state.definitions.has(row.command)) {
+      row.command = order[0] || "";
+      row.args = createDefaultArgs(row.command);
+    }
+  }
+
+  $("globalStatus").textContent = `${defs.size} commands loaded`;
+  renderAll();
+}
+
+const MAX_COMMAND_NESTING = 12;
+
+function getArgDisplayName(arg) {
+  return arg.memberPath
+    ? `${arg.name}.${arg.memberPath}`
+    : arg.name;
+}
+
+function getAssignableCommands() {
+  return [...state.definitionOrder];
+}
+
+function getEffectiveArgDefinitions(row) {
+  const result = [];
+  let cursor = 1;
+
+  function append(commandName, path, depth) {
+    if (depth > MAX_COMMAND_NESTING) return;
+
+    const def = state.definitions.get(commandName);
+    if (!def) return;
+
+    for (const baseArg of def.args) {
+      const key = `${path}${commandName}#${baseArg.index}`;
+      const effective = {
+        ...baseArg,
+        index: cursor++,
+        key
+      };
+      result.push(effective);
+
+      if (baseArg.type === "Command") {
+        const nestedCommand = String(
+          row.args[effective.index - 1] ?? ""
+        ).trim();
+
+        if (nestedCommand && state.definitions.has(nestedCommand)) {
+          append(nestedCommand, `${key}>`, depth + 1);
+        }
+      }
+    }
+  }
+
+  append(row.command, "root>", 0);
+  return result;
+}
+
+function rebuildDynamicArguments(row, changedArg, newValue) {
+  const oldDefs = getEffectiveArgDefinitions(row);
+  const valuesByKey = new Map();
+
+  for (const arg of oldDefs) {
+    valuesByKey.set(
+      arg.key,
+      String(row.args[arg.index - 1] ?? arg.defaultValue ?? "")
+    );
+  }
+
+  valuesByKey.set(changedArg.key, newValue);
+
+  const newArgs = [];
+  let cursor = 1;
+
+  function append(commandName, path, depth) {
+    if (depth > MAX_COMMAND_NESTING) return;
+
+    const def = state.definitions.get(commandName);
+    if (!def) return;
+
+    for (const baseArg of def.args) {
+      const key = `${path}${commandName}#${baseArg.index}`;
+      const value = valuesByKey.has(key)
+        ? valuesByKey.get(key)
+        : String(baseArg.defaultValue ?? "");
+
+      newArgs[cursor - 1] = value;
+      cursor++;
+
+      if (baseArg.type === "Command") {
+        const nestedCommand = String(value ?? "").trim();
+        if (nestedCommand && state.definitions.has(nestedCommand)) {
+          append(nestedCommand, `${key}>`, depth + 1);
+        }
+      }
+    }
+  }
+
+  append(row.command, "root>", 0);
+  row.args = newArgs;
+}
+
+function createDefaultArgs(commandName) {
+  const def = state.definitions.get(commandName);
+  if (!def) return [];
+
+  const maxIndex = def.args.reduce((m,a) => Math.max(m,a.index), 0);
+  const args = Array(maxIndex).fill("");
+
+  for (const arg of def.args) {
+    args[arg.index - 1] = arg.defaultValue ?? "";
+  }
+
+  return args;
+}
+
+function loadRepository(sourceName, text, fileName) {
+  const rows = parseCsv(text);
+  if (!rows.length) throw new Error("Repository CSVが空です。");
+
+  const headers = rows[0].map(h => h.trim());
+  let idIndex = headers.findIndex(h => ["id","Id","ID"].includes(h));
+  if (idIndex < 0) idIndex = 0;
+
+  const ids = rows.slice(1)
+    .map(r => (r[idIndex] ?? "").trim())
+    .filter(Boolean);
+
+  const duplicates = ids.filter((v, i) => ids.indexOf(v) !== i);
+  if (duplicates.length) {
+    throw new Error(`${sourceName}: IDが重複しています: ${[...new Set(duplicates)].join(", ")}`);
+  }
+
+  state.repositories.set(sourceName, {
+    ids,
+    fileName,
+    loaded: true,
+    headers,
+    dataRows: rows.slice(1).map(r => [...r]),
+    idIndex
+  });
+
+  renderAll();
+}
+
+function importScenario(text) {
+  if (!state.definitions.size) {
+    throw new Error("先にCommand定義CSVを読み込んでください。");
+  }
+
+  const rows = parseCsv(text);
+  if (!rows.length) throw new Error("Scenario CSVが空です。");
+
+  const headers = rows[0].map(h => h.trim());
+  const timeIndex = headers.indexOf("Time");
+  const commandIndex = headers.indexOf("Command");
+
+  if (timeIndex < 0 || commandIndex < 0) {
+    throw new Error("Scenario CSVには Time と Command 列が必要です。");
+  }
+
+  const argIndexes = headers
+    .map((h, i) => {
+      const m = /^Arg(\d+)$/i.exec(h);
+      return m ? { argNo: Number(m[1]), col: i } : null;
+    })
+    .filter(Boolean)
+    .sort((a,b) => a.argNo - b.argNo);
+
+  state.rows = rows.slice(1)
+    .filter(r => r.some(v => String(v).trim() !== ""))
+    .map(r => {
+      const args = [];
+      for (const a of argIndexes) args[a.argNo - 1] = r[a.col] ?? "";
+      return {
+        time: r[timeIndex] ?? "",
+        command: (r[commandIndex] ?? "").trim(),
+        args
+      };
+    });
+
+  state.selectedIndex = state.rows.length ? 0 : -1;
+  renderAll();
+}
+
+function validateArgumentValue(arg, raw) {
+  const errors = [];
+
+  if (arg.required && raw === "") {
+    errors.push(`${arg.name} は必須です。`);
+    return errors;
+  }
+  if (raw === "") return errors;
+
+  if (arg.type === "Float") {
+    const n = Number(raw);
+    if (!Number.isFinite(n)) {
+      errors.push(`${arg.name} は数値で指定してください。`);
+      return errors;
+    }
+    if (arg.min !== "" && n < Number(arg.min)) {
+      errors.push(`${arg.name} は ${arg.min} 以上にしてください。`);
+    }
+    if (arg.max !== "" && n > Number(arg.max)) {
+      errors.push(`${arg.name} は ${arg.max} 以下にしてください。`);
+    }
+  }
+
+  if (arg.type === "Int") {
+    const n = Number(raw);
+    if (!Number.isInteger(n)) {
+      errors.push(`${arg.name} は整数で指定してください。`);
+      return errors;
+    }
+    if (arg.min !== "" && n < Number(arg.min)) {
+      errors.push(`${arg.name} は ${arg.min} 以上にしてください。`);
+    }
+    if (arg.max !== "" && n > Number(arg.max)) {
+      errors.push(`${arg.name} は ${arg.max} 以下にしてください。`);
+    }
+  }
+
+  if (arg.type === "Bool" && toBoolText(raw) === "") {
+    errors.push(`${arg.name} は true / false で指定してください。`);
+  }
+
+  if (arg.type === "Enum" && arg.options.length) {
+    const values = arg.multiSelect
+      ? raw.split("|").map(v => v.trim()).filter(Boolean)
+      : [raw];
+
+    const invalidValues = values.filter(v => !arg.options.includes(v));
+    if (invalidValues.length) {
+      errors.push(`${getArgDisplayName(arg)} に未定義の値 '${invalidValues.join("|")}' が指定されています。`);
+    }
+
+    if (arg.multiSelect && new Set(values).size !== values.length) {
+      errors.push(`${getArgDisplayName(arg)} に同じ値が複数回指定されています。`);
+    }
+  }
+
+  if (arg.type === "Command" && !state.definitions.has(raw)) {
+    errors.push(`${getArgDisplayName(arg)}: 未定義のCommand '${raw}' です。`);
+  }
+
+  if (arg.source) {
+    const repo = state.repositories.get(arg.source);
+    if (!repo || !repo.loaded) {
+      errors.push(`Repository '${arg.source}' が読み込まれていません。`);
+    } else if (!repo.ids.includes(raw)) {
+      errors.push(`${arg.name}: '${raw}' は ${arg.source} に存在しません。`);
+    }
+  }
+
+  return errors;
+}
+
+function validateRow(row) {
+  const errors = [];
+
+  const time = Number(row.time);
+  if (String(row.time).trim() === "" ||
+      !Number.isFinite(time) ||
+      time < 0) {
+    errors.push("Time は0以上の数値で指定してください。");
+  }
+
+  const def = state.definitions.get(row.command);
+  if (!def) {
+    errors.push(`未定義のCommandです: ${row.command || "(empty)"}`);
+    return errors;
+  }
+
+  const effectiveArgs = getEffectiveArgDefinitions(row);
+  for (const arg of effectiveArgs) {
+    const raw = String(row.args[arg.index - 1] ?? "").trim();
+    errors.push(...validateArgumentValue(arg, raw));
+  }
+
+  return errors;
+}
+
+function validateAll(showDialog = false) {
+  const all = state.rows.map((row, index) => ({
+    index,
+    errors: validateRow(row)
+  }));
+
+  const invalid = all.filter(x => x.errors.length);
+  renderAll();
+
+  if (showDialog) {
+    if (!invalid.length) {
+      alert("Validation OK: エラーはありません。");
+    } else {
+      const message = invalid
+        .map(x => `Row ${x.index + 1}\n- ${x.errors.join("\n- ")}`)
+        .join("\n\n");
+      alert(`Validation failed\n\n${message}`);
+    }
+  }
+
+  return invalid;
+}
+
+function renderAll() {
+  renderEditorTabs();
+  renderTable();
+  renderActiveRepository();
+  updateEditorVisibility();
+
+  const invalidCount = state.rows.filter(r => validateRow(r).length > 0).length;
+  $("globalStatus").textContent = state.definitions.size
+    ? `${state.definitions.size} commands / ${invalidCount} invalid rows`
+    : "Command定義未読込";
+}
+
+function getScenarioMaxArgCount() {
+  let maxArgs = 1;
+
+  for (const def of state.definitions.values()) {
+    for (const arg of def.args) {
+      maxArgs = Math.max(maxArgs, arg.index);
+    }
+  }
+
+  for (const row of state.rows) {
+    maxArgs = Math.max(
+      maxArgs,
+      row.args.length,
+      getEffectiveArgDefinitions(row).length
+    );
+  }
+
+  return maxArgs;
+}
+
+function renderScenarioHead(maxArgs) {
+  const head = $("scenarioHead");
+  head.innerHTML = "";
+
+  const tr = document.createElement("tr");
+
+  const columns = [
+    { text: "#", cls: "grid-col-no" },
+    { text: "Time", cls: "grid-col-time" },
+    { text: "Command", cls: "grid-col-command" }
+  ];
+
+  for (let i = 1; i <= maxArgs; i++) {
+    columns.push({
+      text: `Arg${i}`,
+      cls: "grid-col-arg"
+    });
+  }
+
+  columns.push({
+    text: "Status",
+    cls: "grid-col-status"
+  });
+
+  for (const column of columns) {
+    const th = document.createElement("th");
+    th.className = column.cls;
+    th.textContent = column.text;
+    tr.appendChild(th);
+  }
+
+  head.appendChild(tr);
+}
+
+function renderTable() {
+  const body = $("scenarioBody");
+  body.innerHTML = "";
+
+  const maxArgs = getScenarioMaxArgCount();
+  renderScenarioHead(maxArgs);
+
+  $("tableEmpty").style.display = state.rows.length ? "none" : "block";
+
+  state.rows.forEach((row, rowIndex) => {
+    const tr = document.createElement("tr");
+    if (rowIndex === state.selectedIndex) {
+      tr.classList.add("grid-row-selected");
+    }
+
+    tr.addEventListener("click", e => {
+      if (e.target.matches("input, select, option, button")) return;
+      state.selectedIndex = rowIndex;
+      renderTableSelectionOnly();
+    });
+
+    // #
+    const noTd = document.createElement("td");
+    noTd.className = "grid-col-no";
+    const noCell = document.createElement("div");
+    noCell.className = "grid-simple-cell";
+    noCell.textContent = String(rowIndex + 1);
+    noTd.appendChild(noCell);
+    tr.appendChild(noTd);
+
+    // Time
+    const timeTd = document.createElement("td");
+    timeTd.className = "grid-col-time";
+    timeTd.appendChild(createTimeGridCell(row, rowIndex));
+    tr.appendChild(timeTd);
+
+    // Command
+    const commandTd = document.createElement("td");
+    commandTd.className = "grid-col-command";
+    commandTd.appendChild(createCommandGridCell(row, rowIndex));
+    tr.appendChild(commandTd);
+
+    // Arg1..ArgN
+    const effectiveArgs = getEffectiveArgDefinitions(row);
+    const argByIndex = new Map(
+      effectiveArgs.map(arg => [arg.index, arg])
+    );
+
+    for (let argIndex = 1; argIndex <= maxArgs; argIndex++) {
+      const argTd = document.createElement("td");
+      argTd.className = "grid-col-arg";
+
+      const arg = argByIndex.get(argIndex);
+      if (arg) {
+        argTd.appendChild(
+          createArgumentGridCell(row, rowIndex, arg)
+        );
+      } else {
+        const empty = document.createElement("div");
+        empty.className = "grid-empty";
+        argTd.appendChild(empty);
+      }
+
+      tr.appendChild(argTd);
+    }
+
+    // Status
+    const statusTd = document.createElement("td");
+    statusTd.className = "grid-col-status";
+    statusTd.appendChild(
+      createStatusGridCell(validateRow(row))
+    );
+    tr.appendChild(statusTd);
+
+    body.appendChild(tr);
+  });
+}
+
+function renderTableSelectionOnly() {
+  const rows = $("scenarioBody")?.querySelectorAll("tr") ?? [];
+  rows.forEach((tr, i) => {
+    tr.classList.toggle(
+      "grid-row-selected",
+      i === state.selectedIndex
+    );
+  });
+}
+
+function createTimeGridCell(row, rowIndex) {
+  const cell = document.createElement("div");
+  cell.className = "grid-cell grid-edit-cell";
+
+  const label = document.createElement("div");
+  label.className = "grid-cell-label";
+  label.textContent = "";
+
+  const input = document.createElement("input");
+  input.type = "number";
+  input.min = "0";
+  input.step = "any";
+  input.className = "grid-control";
+  input.value = row.time;
+
+  const invalid =
+    String(row.time).trim() === "" ||
+    !Number.isFinite(Number(row.time)) ||
+    Number(row.time) < 0;
+
+  cell.classList.toggle("invalid", invalid);
+
+  input.addEventListener("focus", () => {
+    state.selectedIndex = rowIndex;
+    renderTableSelectionOnly();
+  });
+
+  input.addEventListener("input", () => {
+    row.time = input.value;
+    const invalidNow =
+      String(row.time).trim() === "" ||
+      !Number.isFinite(Number(row.time)) ||
+      Number(row.time) < 0;
+    cell.classList.toggle("invalid", invalidNow);
+    refreshRowStatus(input.closest("tr"), row);
+  });
+
+  cell.append(label, input);
+  return cell;
+}
+
+function createCommandGridCell(row, rowIndex) {
+  const cell = document.createElement("div");
+  cell.className = "grid-cell grid-edit-cell";
+
+  const label = document.createElement("div");
+  label.className = "grid-cell-label";
+  label.textContent = "";
+
+  const select = document.createElement("select");
+  select.className = "grid-control";
+  select.appendChild(new Option("-- select --", ""));
+
+  for (const name of state.definitionOrder) {
+    select.appendChild(new Option(name, name));
+  }
+
+  select.value = row.command;
+
+  const invalid = !state.definitions.has(row.command);
+  cell.classList.toggle("invalid", invalid);
+
+  select.addEventListener("focus", () => {
+    state.selectedIndex = rowIndex;
+    renderTableSelectionOnly();
+  });
+
+  select.addEventListener("change", () => {
+    row.command = select.value;
+    row.args = createDefaultArgs(row.command);
+    state.selectedIndex = rowIndex;
+    renderAll();
+  });
+
+  cell.append(label, select);
+  return cell;
+}
+
+function createMultiSelectGridControl(arg, current) {
+  const details = document.createElement("details");
+  details.className = "grid-multiselect";
+
+  const summary = document.createElement("summary");
+  summary.className = "grid-control";
+  details.appendChild(summary);
+
+  const panel = document.createElement("div");
+  panel.className = "grid-multiselect-panel";
+  details.appendChild(panel);
+
+  const selected = new Set(
+    String(current || "")
+      .split("|")
+      .map(v => v.trim())
+      .filter(Boolean)
+  );
+
+  const checkboxes = [];
+  for (const option of arg.options) {
+    const label = document.createElement("label");
+    label.className = "grid-multiselect-option";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = option;
+    checkbox.checked = selected.has(option);
+    checkboxes.push(checkbox);
+
+    const text = document.createElement("span");
+    text.textContent = option;
+    label.append(checkbox, text);
+    panel.appendChild(label);
+  }
+
+  const readValue = () => checkboxes
+    .filter(c => c.checked)
+    .map(c => c.value)
+    .join("|");
+
+  const updateSummary = () => {
+    const value = readValue();
+    summary.textContent = value || "-- select --";
+    summary.title = value;
+  };
+
+  Object.defineProperty(details, "value", {
+    configurable: true,
+    get: readValue
+  });
+
+  for (const checkbox of checkboxes) {
+    checkbox.addEventListener("change", () => {
+      updateSummary();
+      details.dispatchEvent(new Event("change", { bubbles: false }));
+    });
+  }
+
+  updateSummary();
+  return details;
+}
+
+function createArgumentGridCell(row, rowIndex, arg) {
+  const cell = document.createElement("div");
+  cell.className = "grid-cell grid-edit-cell";
+
+  const label = document.createElement("div");
+  label.className = "grid-cell-label";
+  label.textContent = getArgDisplayName(arg);
+  label.title = getArgDisplayName(arg);
+
+  const current = String(row.args[arg.index - 1] ?? "");
+  let control;
+
+  if (arg.type === "Command") {
+    control = document.createElement("select");
+    control.appendChild(new Option("-- select --", ""));
+    for (const commandName of getAssignableCommands()) {
+      control.appendChild(new Option(commandName, commandName));
+    }
+    control.value = current;
+  } else if (arg.source) {
+    control = document.createElement("select");
+    control.appendChild(new Option("-- select --", ""));
+
+    const repo = state.repositories.get(arg.source);
+    if (repo?.loaded) {
+      for (const id of repo.ids) {
+        control.appendChild(new Option(id, id));
+      }
+    } else {
+      control.appendChild(
+        new Option(`Repository '${arg.source}' 未読込`, "")
+      );
+      control.disabled = true;
+    }
+    control.value = current;
+  } else if (arg.type === "Bool") {
+    control = document.createElement("select");
+    control.appendChild(new Option("-- select --", ""));
+    control.appendChild(new Option("true", "true"));
+    control.appendChild(new Option("false", "false"));
+    control.value = toBoolText(current);
+  } else if (arg.type === "Enum" && arg.options.length && arg.multiSelect) {
+    control = createMultiSelectGridControl(arg, current);
+  } else if (arg.type === "Enum" && arg.options.length) {
+    control = document.createElement("select");
+    control.appendChild(new Option("-- select --", ""));
+    for (const option of arg.options) {
+      control.appendChild(new Option(option, option));
+    }
+    control.value = current;
+  } else {
+    control = document.createElement("input");
+    control.type = ["Float", "Int"].includes(arg.type)
+      ? "number"
+      : "text";
+
+    if (arg.type === "Int") control.step = "1";
+    if (arg.type === "Float") control.step = "any";
+    if (arg.min !== "") control.min = arg.min;
+    if (arg.max !== "") control.max = arg.max;
+    control.value = current;
+  }
+
+  if (!control.classList.contains("grid-multiselect")) {
+    control.className = "grid-control";
+  }
+  control.title = current;
+
+  const errors = validateArgumentValue(
+    arg,
+    current.trim()
+  );
+  cell.classList.toggle("invalid", errors.length > 0);
+
+  control.addEventListener(
+    control.classList.contains("grid-multiselect") ? "focusin" : "focus",
+    () => {
+      state.selectedIndex = rowIndex;
+      renderTableSelectionOnly();
+    }
+  );
+
+  const commit = () => {
+    row.args[arg.index - 1] = control.value;
+    control.title = control.value;
+
+    if (arg.type === "Command") {
+      rebuildDynamicArguments(row, arg, control.value);
+      state.selectedIndex = rowIndex;
+      renderAll();
+      return;
+    }
+
+    const nextErrors = validateArgumentValue(
+      arg,
+      String(control.value).trim()
+    );
+    cell.classList.toggle("invalid", nextErrors.length > 0);
+
+    refreshRowStatus(control.closest("tr"), row);
+  };
+
+  control.addEventListener("change", commit);
+
+  if (control.tagName === "INPUT") {
+    control.addEventListener("input", commit);
+  }
+
+  cell.append(label, control);
+  return cell;
+}
+
+function createStatusGridCell(errors) {
+  const wrap = document.createElement("div");
+  wrap.className = "grid-simple-cell";
+
+  const status = document.createElement("span");
+  status.className =
+    "row-status " + (errors.length ? "error" : "ok");
+  status.textContent =
+    errors.length ? `Error ${errors.length}` : "OK";
+
+  if (errors.length) {
+    status.title = errors.join("\n");
+  }
+
+  wrap.appendChild(status);
+  return wrap;
+}
+
+function refreshRowStatus(tr, row) {
+  if (!tr) return;
+
+  const errors = validateRow(row);
+  const statusTd = tr.querySelector("td.grid-col-status");
+  if (statusTd) {
+    statusTd.innerHTML = "";
+    statusTd.appendChild(createStatusGridCell(errors));
+  }
+
+  const invalidCount =
+    state.rows.filter(r => validateRow(r).length > 0).length;
+
+  $("globalStatus").textContent = state.definitions.size
+    ? `${state.definitions.size} commands / ${invalidCount} invalid rows`
+    : "Command定義未読込";
+}
+
+function getRepositoryReferenceRows(sourceName, id) {
+  const referencedRows = new Set();
+
+  state.rows.forEach((row, rowIndex) => {
+    const def = state.definitions.get(row.command);
+    if (!def) return;
+
+    for (const arg of getEffectiveArgDefinitions(row)) {
+      if (arg.source !== sourceName) continue;
+
+      const value = String(row.args[arg.index - 1] ?? "").trim();
+      if (value === id) {
+        referencedRows.add(rowIndex);
+      }
+    }
+  });
+
+  return [...referencedRows];
+}
+
+function clearRepositoryReferences(sourceName, id) {
+  state.rows.forEach(row => {
+    const def = state.definitions.get(row.command);
+    if (!def) return;
+
+    for (const arg of getEffectiveArgDefinitions(row)) {
+      if (arg.source !== sourceName) continue;
+
+      const value = String(row.args[arg.index - 1] ?? "").trim();
+      if (value === id) {
+        row.args[arg.index - 1] = "";
+      }
+    }
+  });
+}
+
+function replaceRepositoryReferences(sourceName, oldId, newId) {
+  state.rows.forEach(row => {
+    const def = state.definitions.get(row.command);
+    if (!def) return;
+
+    for (const arg of getEffectiveArgDefinitions(row)) {
+      if (arg.source !== sourceName) continue;
+
+      const value = String(row.args[arg.index - 1] ?? "").trim();
+      if (value === oldId) {
+        row.args[arg.index - 1] = newId;
+      }
+    }
+  });
+}
+
+function validateRepositoryId(repo, id, ignoreId = null) {
+  const value = String(id ?? "").trim();
+
+  if (!value) {
+    return "IDを入力してください。";
+  }
+
+  if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(value)) {
+    return "IDは英字で始まり、英数字・_・- のみ使用できます。";
+  }
+
+  const duplicate = repo.ids.some(existing =>
+    existing !== ignoreId && existing === value
+  );
+
+  if (duplicate) {
+    return `ID "${value}" は既に存在します。`;
+  }
+
+  return null;
+}
+
+function getRepositoryPathIndex(repo) {
+  if (!repo?.headers?.length) return -1;
+
+  const pathIndex = repo.headers.findIndex(
+    h => String(h).trim().toLowerCase() === "path"
+  );
+
+  return pathIndex;
+}
+
+function getRepositoryPath(repo, id) {
+  const pathIndex = getRepositoryPathIndex(repo);
+  if (pathIndex < 0) return "";
+
+  const row = repo.dataRows.find(r =>
+    String(r[repo.idIndex] ?? "").trim() === id
+  );
+
+  return row ? String(row[pathIndex] ?? "") : "";
+}
+
+function addRepositoryId(sourceName) {
+  const repo = state.repositories.get(sourceName);
+  if (!repo?.loaded) return;
+
+  const id = prompt("追加するIDを入力してください。");
+  if (id === null) return;
+
+  const normalizedId = id.trim();
+  const error = validateRepositoryId(repo, normalizedId);
+  if (error) {
+    alert(error);
+    return;
+  }
+
+  const pathIndex = getRepositoryPathIndex(repo);
+  let path = "";
+
+  if (pathIndex >= 0) {
+    const enteredPath = prompt(
+      `"${normalizedId}" のPathを入力してください。`,
+      ""
+    );
+    if (enteredPath === null) return;
+
+    path = enteredPath.trim();
+    if (!path) {
+      alert("Pathを入力してください。");
+      return;
+    }
+  }
+
+  const newRow = Array(repo.headers.length).fill("");
+  newRow[repo.idIndex] = normalizedId;
+  if (pathIndex >= 0) newRow[pathIndex] = path;
+
+  repo.ids.push(normalizedId);
+  repo.dataRows.push(newRow);
+
+  renderAll();
+}
+
+function renameRepositoryId(sourceName, oldId) {
+  const repo = state.repositories.get(sourceName);
+  if (!repo?.loaded) return;
+
+  const newId = prompt(
+    `"${oldId}" の新しいIDを入力してください。`,
+    oldId
+  );
+  if (newId === null) return;
+
+  const normalizedNewId = newId.trim();
+  if (normalizedNewId === oldId) return;
+
+  const error = validateRepositoryId(repo, normalizedNewId, oldId);
+  if (error) {
+    alert(error);
+    return;
+  }
+
+  const referencedRows = getRepositoryReferenceRows(sourceName, oldId);
+
+  const message = referencedRows.length > 0
+    ? `"${oldId}" は Scenario の ${referencedRows.length} 行で使用されています。\n\nリネームすると、すべての参照を "${normalizedNewId}" に自動更新します。\n\nリネームしますか？`
+    : `"${oldId}" を "${normalizedNewId}" にリネームしますか？`;
+
+  if (!confirm(message)) return;
+
+  repo.ids = repo.ids.map(id =>
+    id === oldId ? normalizedNewId : id
+  );
+
+  for (const row of repo.dataRows) {
+    if (String(row[repo.idIndex] ?? "").trim() === oldId) {
+      row[repo.idIndex] = normalizedNewId;
+    }
+  }
+
+  replaceRepositoryReferences(
+    sourceName,
+    oldId,
+    normalizedNewId
+  );
+
+  renderAll();
+}
+
+function changeRepositoryPath(sourceName, id) {
+  const repo = state.repositories.get(sourceName);
+  if (!repo?.loaded) return;
+
+  const pathIndex = getRepositoryPathIndex(repo);
+  if (pathIndex < 0) {
+    alert(`Repository "${sourceName}" に Path 列がありません。`);
+    return;
+  }
+
+  const currentPath = getRepositoryPath(repo, id);
+
+  const newPath = prompt(
+    `"${id}" のPathを変更してください。`,
+    currentPath
+  );
+  if (newPath === null) return;
+
+  const normalizedPath = newPath.trim();
+  if (!normalizedPath) {
+    alert("Pathを空欄にはできません。");
+    return;
+  }
+
+  const row = repo.dataRows.find(r =>
+    String(r[repo.idIndex] ?? "").trim() === id
+  );
+
+  if (!row) {
+    alert(`ID "${id}" のRepository行が見つかりません。`);
+    return;
+  }
+
+  row[pathIndex] = normalizedPath;
+  renderAll();
+}
+
+function deleteRepositoryId(sourceName, id) {
+  const repo = state.repositories.get(sourceName);
+  if (!repo?.loaded) return;
+
+  const referencedRows = getRepositoryReferenceRows(sourceName, id);
+  const count = referencedRows.length;
+
+  const message = count > 0
+    ? `"${id}" は Scenario の ${count} 行で使用されています。\n\n削除すると、そのIDが使われているすべての箇所を自動的に空欄にします。\n\n削除しますか？`
+    : `"${id}" は Scenario では使用されていません。\n\n削除しますか？`;
+
+  if (!confirm(message)) return;
+
+  clearRepositoryReferences(sourceName, id);
+
+  repo.ids = repo.ids.filter(x => x !== id);
+  repo.dataRows = repo.dataRows.filter(r =>
+    String(r[repo.idIndex] ?? "").trim() !== id
+  );
+
+  renderAll();
+}
+
+function exportRepository(sourceName) {
+  const repo = state.repositories.get(sourceName);
+  if (!repo?.loaded) return;
+
+  const lines = [
+    repo.headers.map(csvEscape).join(","),
+    ...repo.dataRows.map(row =>
+      repo.headers.map((_, i) => csvEscape(row[i] ?? "")).join(",")
+    )
+  ];
+
+  const blob = new Blob(
+    ["\uFEFF" + lines.join("\r\n")],
+    { type: "text/csv;charset=utf-8" }
+  );
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = repo.fileName || `${sourceName}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+
+function repositoryDisplayName(sourceName) {
+  return sourceName.endsWith("Repository")
+    ? sourceName.slice(0, -"Repository".length)
+    : sourceName;
+}
+
+function renderEditorTabs() {
+  const tabs = $("editorTabs");
+  if (!tabs) return;
+  tabs.innerHTML = "";
+
+  const addTab = (key, label) => {
+    const button = document.createElement("button");
+    button.className = "editor-tab" + (state.activeEditor === key ? " active" : "");
+    button.textContent = label;
+    button.addEventListener("click", () => {
+      state.activeEditor = key;
+      renderAll();
+    });
+    tabs.appendChild(button);
+  };
+
+  addTab("scenario", "Scenario");
+  for (const source of [...state.repositories.keys()].sort()) {
+    addTab(source, repositoryDisplayName(source));
+  }
+}
+
+function updateEditorVisibility() {
+  const scenarioMode = state.activeEditor === "scenario";
+  $("scenarioToolbar").classList.toggle("hidden", !scenarioMode);
+  $("scenarioContent").classList.toggle("hidden", !scenarioMode);
+  $("repositoryContent").classList.toggle("hidden", scenarioMode);
+
+  const workspace = document.querySelector(".workspace");
+  if (workspace) {
+    workspace.style.gridTemplateColumns = "1fr";
+  }
+
+  const status = $("editorHeaderStatus");
+  if (!status) return;
+  if (scenarioMode) {
+    status.textContent = `${state.rows.length} rows`;
+  } else {
+    const repo = state.repositories.get(state.activeEditor);
+    status.textContent = repo?.loaded ? `${repo.ids.length} IDs` : "未読込";
+  }
+}
+
+function renderActiveRepository() {
+  const meta = $("repositoryMeta");
+  const host = $("repositoryTableHost");
+  if (!meta || !host) return;
+
+  meta.innerHTML = "";
+  host.innerHTML = "";
+
+  if (state.activeEditor === "scenario") return;
+
+  const source = state.activeEditor;
+  const repo = state.repositories.get(source);
+
+  if (!repo) {
+    host.innerHTML = `<div class="repository-empty">Repository定義がありません。</div>`;
+    return;
+  }
+
+  const title = document.createElement("strong");
+  title.textContent = source;
+  const file = document.createElement("span");
+  file.textContent = repo.loaded ? repo.fileName : "CSV未読込";
+  const count = document.createElement("span");
+  count.textContent = repo.loaded ? `${repo.ids.length} IDs` : "0 IDs";
+  meta.append(title, file, count);
+
+  const toolbar = document.createElement("div");
+  toolbar.className = "editor-toolbar";
+  toolbar.style.paddingLeft = "0";
+  toolbar.style.paddingRight = "0";
+  toolbar.style.borderBottom = "none";
+
+  const fileLabel = document.createElement("label");
+  fileLabel.className = "repo-file";
+  fileLabel.innerHTML =
+    `<button>${repo.loaded ? "再読込" : "Repository読込"}</button>` +
+    `<input type="file" accept=".csv,text/csv">`;
+  const input = fileLabel.querySelector("input");
+  input.addEventListener("change", async () => {
+    if (!input.files?.[0]) return;
+    try {
+      const f = input.files[0];
+      loadRepository(source, await f.text(), f.name);
+    } catch (e) {
+      alert(e.message || String(e));
+    } finally {
+      input.value = "";
+    }
+  });
+  toolbar.appendChild(fileLabel);
+
+  if (repo.loaded) {
+    const save = document.createElement("button");
+    save.textContent = "保存";
+    save.addEventListener("click", () => exportRepository(source));
+    toolbar.appendChild(save);
+
+    const spacer = document.createElement("div");
+    spacer.className = "spacer";
+    toolbar.appendChild(spacer);
+
+    const add = document.createElement("button");
+    add.className = "primary";
+    add.textContent = "＋ Add ID";
+    add.addEventListener("click", () => addRepositoryId(source));
+    toolbar.appendChild(add);
+  }
+
+  host.appendChild(toolbar);
+
+  if (!repo.loaded) {
+    const empty = document.createElement("div");
+    empty.className = "repository-empty";
+    empty.textContent = `${source} のCSVを読み込んでください。`;
+    host.appendChild(empty);
+    return;
+  }
+
+  const wrap = document.createElement("div");
+  wrap.className = "repository-table-wrap";
+  const table = document.createElement("table");
+  table.className = "repository-table";
+  table.innerHTML = `
+    <thead>
+      <tr><th>ID</th><th>Path</th><th>Used</th><th>Actions</th></tr>
+    </thead>
+  `;
+  const tbody = document.createElement("tbody");
+
+  for (const id of repo.ids) {
+    const tr = document.createElement("tr");
+
+    const idTd = document.createElement("td");
+    idTd.className = "repo-item-id";
+    idTd.textContent = id;
+
+    const pathTd = document.createElement("td");
+    pathTd.textContent = getRepositoryPath(repo, id) || "—";
+
+    const usedTd = document.createElement("td");
+    usedTd.textContent = String(getRepositoryReferenceRows(source, id).length);
+
+    const actionsTd = document.createElement("td");
+    const actions = document.createElement("div");
+    actions.className = "repo-item-actions";
+
+    const rename = document.createElement("button");
+    rename.className = "repo-small-btn";
+    rename.textContent = "Rename";
+    rename.addEventListener("click", () => renameRepositoryId(source, id));
+
+    const path = document.createElement("button");
+    path.className = "repo-small-btn";
+    path.textContent = "Path";
+    path.disabled = getRepositoryPathIndex(repo) < 0;
+    path.addEventListener("click", () => changeRepositoryPath(source, id));
+
+    const del = document.createElement("button");
+    del.className = "repo-delete";
+    del.textContent = "Delete";
+    del.addEventListener("click", () => deleteRepositoryId(source, id));
+
+    actions.append(rename, path, del);
+    actionsTd.appendChild(actions);
+    tr.append(idTd, pathTd, usedTd, actionsTd);
+    tbody.appendChild(tr);
+  }
+
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  host.appendChild(wrap);
+}
+
+function addRow() {
+  if (!state.definitionOrder.length) {
+    alert("先にCommand定義CSVを読み込んでください。");
+    return;
+  }
+
+  const command = state.definitionOrder[0];
+  const previous = state.rows[state.rows.length - 1];
+  const time = previous ? previous.time : "0";
+
+  state.rows.push({
+    time,
+    command,
+    args: createDefaultArgs(command)
+  });
+  state.selectedIndex = state.rows.length - 1;
+  renderAll();
+}
+
+function duplicateRow() {
+  if (state.selectedIndex < 0) return;
+  const src = state.rows[state.selectedIndex];
+  const copy = {
+    time: src.time,
+    command: src.command,
+    args: [...src.args]
+  };
+  state.rows.splice(state.selectedIndex + 1, 0, copy);
+  state.selectedIndex++;
+  renderAll();
+}
+
+function deleteRow() {
+  if (state.selectedIndex < 0) return;
+  state.rows.splice(state.selectedIndex, 1);
+  if (!state.rows.length) state.selectedIndex = -1;
+  else state.selectedIndex = Math.min(state.selectedIndex, state.rows.length - 1);
+  renderAll();
+}
+
+function moveRow(delta) {
+  const i = state.selectedIndex;
+  const j = i + delta;
+  if (i < 0 || j < 0 || j >= state.rows.length) return;
+  [state.rows[i], state.rows[j]] = [state.rows[j], state.rows[i]];
+  state.selectedIndex = j;
+  renderAll();
+}
+
+function applySort() {
+  if (state.rows.length < 2) return;
+
+  const selectedRow =
+    state.selectedIndex >= 0 ? state.rows[state.selectedIndex] : null;
+
+  state.rows = state.rows
+    .map((row, originalIndex) => ({
+      row,
+      originalIndex,
+      time: Number(row.time),
+      command: String(row.command ?? "")
+    }))
+    .sort((a, b) => {
+      const aTimeValid = Number.isFinite(a.time);
+      const bTimeValid = Number.isFinite(b.time);
+
+      // Time sort is always the primary key once selected.
+      if (state.timeSortDirection) {
+        if (aTimeValid && !bTimeValid) return -1;
+        if (!aTimeValid && bTimeValid) return 1;
+
+        if (aTimeValid && bTimeValid) {
+          const timeDiff = a.time - b.time;
+          if (timeDiff !== 0) {
+            return state.timeSortDirection === "desc"
+              ? -timeDiff
+              : timeDiff;
+          }
+        }
+      }
+
+      // Command sort is the secondary key.
+      if (state.commandSortDirection) {
+        const commandDiff = a.command.localeCompare(
+          b.command,
+          undefined,
+          { sensitivity: "base" }
+        );
+
+        if (commandDiff !== 0) {
+          return state.commandSortDirection === "desc"
+            ? -commandDiff
+            : commandDiff;
+        }
+      }
+
+      // Stable ordering for otherwise equal rows.
+      return a.originalIndex - b.originalIndex;
+    })
+    .map(x => x.row);
+
+  state.selectedIndex = selectedRow
+    ? state.rows.indexOf(selectedRow)
+    : -1;
+
+  renderAll();
+}
+
+function sortByTime(direction) {
+  state.timeSortDirection = direction;
+  applySort();
+}
+
+function sortByCommand(direction) {
+  state.commandSortDirection = direction;
+  applySort();
+}
+
+function exportScenario() {
+  if (!state.rows.length) {
+    alert("Scenarioに行がありません。");
+    return;
+  }
+
+  const invalid = validateAll(false);
+  if (invalid.length) {
+    const first = invalid[0];
+    state.selectedIndex = first.index;
+    renderAll();
+    alert(`Validation errorがあります。Row ${first.index + 1} を確認してください。`);
+    return;
+  }
+
+  let maxArgs = 0;
+  for (const def of state.definitions.values()) {
+    for (const arg of def.args) {
+      maxArgs = Math.max(maxArgs, arg.index);
+    }
+  }
+
+  for (const row of state.rows) {
+    maxArgs = Math.max(maxArgs, row.args.length);
+  }
+
+
+  const headers = ["Time", "Command"];
+  for (let i = 1; i <= maxArgs; i++) headers.push(`Arg${i}`);
+
+  const lines = [headers.map(csvEscape).join(",")];
+
+  for (const row of state.rows) {
+    const values = [row.time, row.command];
+    for (let i = 0; i < maxArgs; i++) values.push(row.args[i] ?? "");
+    lines.push(values.map(csvEscape).join(","));
+  }
+
+  const blob = new Blob(["\uFEFF" + lines.join("\r\n")], {
+    type: "text/csv;charset=utf-8"
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "scenario.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+$("definitionFile").addEventListener("change", async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  try {
+    loadDefinitions(await file.text());
+  } catch (err) {
+    alert(err.message || String(err));
+  } finally {
+    e.target.value = "";
+  }
+});
+
+$("scenarioFile").addEventListener("change", async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  try {
+    importScenario(await file.text());
+  } catch (err) {
+    alert(err.message || String(err));
+  } finally {
+    e.target.value = "";
+  }
+});
+
+$("addBtn").addEventListener("click", addRow);
+$("duplicateBtn").addEventListener("click", duplicateRow);
+$("deleteBtn").addEventListener("click", deleteRow);
+$("upBtn").addEventListener("click", () => moveRow(-1));
+$("downBtn").addEventListener("click", () => moveRow(1));
+$("sortTimeAscBtn").addEventListener("click", () => sortByTime("asc"));
+$("sortTimeDescBtn").addEventListener("click", () => sortByTime("desc"));
+$("sortCommandAscBtn").addEventListener("click", () => sortByCommand("asc"));
+$("sortCommandDescBtn").addEventListener("click", () => sortByCommand("desc"));
+$("validateBtn").addEventListener("click", () => validateAll(true));
+$("exportBtn").addEventListener("click", exportScenario);
+
+renderAll();
+</script>
+</body>
+</html>
+
+<style>.workspace{grid-template-columns:1fr}</style>

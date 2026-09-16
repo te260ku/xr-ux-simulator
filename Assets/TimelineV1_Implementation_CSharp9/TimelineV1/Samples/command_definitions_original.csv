@@ -1,0 +1,10 @@
+﻿Command,ArgIndex,ArgName,Type,Required,Source,Default,Min,Max,Options
+PlaySound,1,SoundId,Id,true,SoundRepository,,,,
+PlaySound,2,Volume,Float,false,,1.0,0,1,
+PlayLight,1,ScenarioId,Id,true,LightRepository,,,,
+PlayLight,2,Loop,Bool,false,,false,,,
+ShowImage,1,ImageId,Id,true,ImageRepository,,,,
+ShowImage,2,Position,Enum,true,,,,,Left|Center|Right
+ShowImage,3,Duration,Float,false,,3.0,0,,
+SetDiagCommand,1,DiagCommandId,Int,true,,,,,
+SetDiagCommand,2,AssignedCommand,Command,true,,,,,

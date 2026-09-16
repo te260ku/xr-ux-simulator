@@ -1,0 +1,11 @@
+Command,ArgIndex,ArgName,MemberPath,Type,Required,Source,Default,Min,Max,Options,MultiSelect
+PlaySound,1,request,SoundId,RepositoryKey,true,SoundRepository,,,,,false
+PlaySound,2,request,Volume,Float,true,,1.0,0,1,,false
+PlaySound,3,request,Area,Enum,true,,,,,Front|Rear,true
+PlayLight,1,ScenarioId,,RepositoryKey,true,LightRepository,,,,,false
+PlayLight,2,Loop,,Bool,false,,false,,,,false
+ShowImage,1,ImageId,,RepositoryKey,true,ImageRepository,,,,,false
+ShowImage,2,Position,,Enum,true,,,,,Left|Center|Right,false
+ShowImage,3,Duration,,Float,false,,3.0,0,,,false
+SetDiagCommand,1,DiagCommandId,,Int,true,,,,,,false
+SetDiagCommand,2,AssignedCommand,,Command,true,,,,,,false
