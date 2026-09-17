@@ -2893,7 +2893,7 @@ MonoBehaviour:
     m_SkipHidden: 0
     m_SearchArea: 1
     m_Folders:
-    - Assets/Repository
+    - Assets/TimelineV1_Implementation_CSharp9/TimelineV1/Unity/Examples
     m_Globs: []
     m_ProductIds: 
     m_AnyWithAssetOrigin: 0
@@ -2903,24 +2903,24 @@ MonoBehaviour:
   m_ViewMode: 1
   m_StartGridSize: 64
   m_LastFolders:
-  - Assets/Repository
+  - Assets/TimelineV1_Implementation_CSharp9/TimelineV1/Unity/Examples
   m_LastFoldersGridSize: -1
   m_LastProjectPath: C:\Users\tetsuro\xr-ux-simulator
   m_LockTracker:
     m_IsLocked: 0
   m_LastLocalAssetsSearchArea: 1
   m_FolderTreeState:
-    scrollPos: {x: 0, y: 0}
+    scrollPos: {x: 0, y: 231}
     m_SelectedIDs:
-    - m_Data: 67856
+    - m_Data: 70212
     m_LastClickedID:
-      m_Data: 67856
+      m_Data: 70212
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 67240
-    - m_Data: 67242
-    - m_Data: 67244
-    - m_Data: 67246
+    - m_Data: 67340
+    - m_Data: 67342
+    - m_Data: 67344
+    - m_Data: 67346
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -2954,10 +2954,10 @@ MonoBehaviour:
       m_Data: 0
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 67240
-    - m_Data: 67242
-    - m_Data: 67244
-    - m_Data: 67246
+    - m_Data: 67340
+    - m_Data: 67342
+    - m_Data: 67344
+    - m_Data: 67346
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -2988,7 +2988,7 @@ MonoBehaviour:
     m_SelectedInstanceIDs: []
     m_LastClickedEntityId:
       m_Data: 0
-    m_HadKeyboardFocusLastEvent: 0
+    m_HadKeyboardFocusLastEvent: 1
     m_ExpandedInstanceIDs: []
     m_RenameOverlay:
       m_UserAcceptedRename: 0

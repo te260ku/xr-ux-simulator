@@ -1,0 +1,4 @@
+Time,Command,Arg1,Arg2,Arg3,Arg4,Arg5
+0.0,SetDiagCommand,101,PlaySound,Warning02,1.0,Rear
+0.0,SetDiagCommand,101,PlayLight,PedestrianAlert,false,
+0.0,SetDiagCommand,102,PlaySound,Warning01,0.8,Front|Rear

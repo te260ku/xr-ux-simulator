@@ -1,0 +1,8 @@
+Command,ArgIndex,ArgName,MemberPath,Type,Required,Source,Default,Options,MultiSelect
+PlaySound,1,request,SoundId,RepositoryKey,true,SoundRepository,,,false
+PlaySound,2,request,Output.Volume,Float,true,,,,false
+PlaySound,3,request,Output.Areas,Enum,true,,,Front|Rear,true
+PlayLight,1,scenarioId,,RepositoryKey,true,LightRepository,,,false
+PlayLight,2,loop,,Bool,false,,false,,false
+SetDiagCommand,1,diagCommandId,,Int,true,,,,false
+SetDiagCommand,2,assignedCommand,,Command,true,,,,false
