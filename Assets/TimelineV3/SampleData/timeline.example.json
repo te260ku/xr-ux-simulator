@@ -1,0 +1,34 @@
+[
+  {
+    "time": 0.0,
+    "execution": {
+      "command": "PlaySound",
+      "arguments": {
+        "soundId": {
+          "value": "Warning01"
+        },
+        "volume": 0.8
+      }
+    }
+  },
+  {
+    "time": 2.0,
+    "execution": {
+      "command": "SetDiagCommand",
+      "arguments": {
+        "id": {
+          "value": 10
+        },
+        "execution": {
+          "command": "PlaySound",
+          "arguments": {
+            "soundId": {
+              "value": "Warning01"
+            },
+            "volume": 1.0
+          }
+        }
+      }
+    }
+  }
+]

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Timeline Scenario Editor</title>
+<style>
+:root{--bg:#f4f5f7;--panel:#fff;--line:#d7dbe0;--line2:#bcc3cc;--text:#1f2328;--muted:#68717d;--accent:#2563eb;--danger:#b42318;--head:#f7f8fa}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}button,input,select{font:inherit}button{border:1px solid var(--line2);background:#fff;border-radius:6px;padding:6px 10px;cursor:pointer}button:hover{background:#f5f7fa}button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}button.danger{color:var(--danger)}button.small{padding:4px 8px;font-size:12px}input,select{border:1px solid var(--line2);border-radius:5px;padding:5px 7px;background:#fff;min-height:30px}.invalid{border-color:var(--danger)!important}.app{min-width:1100px}.topbar,.toolbar{display:flex;align-items:center;gap:8px;background:var(--panel);border-bottom:1px solid var(--line);padding:10px 14px}.topbar{position:sticky;top:0;z-index:20}.spacer{flex:1}.status{font-size:12px;color:var(--muted)}.tabs{display:flex;background:var(--panel);border-bottom:1px solid var(--line);padding:0 14px}.tab{border:0;border-radius:0;border-bottom:2px solid transparent;background:transparent;padding:11px 16px}.tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}.content{padding:14px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden}table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:7px 8px;vertical-align:top}th:last-child,td:last-child{border-right:0}th{background:var(--head);text-align:left;font-size:12px;color:#4c5560}.time-col{width:105px}.command-col{width:210px}.action-col{width:185px}.arg-grid{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:flex-start}.field{display:flex;flex-direction:column;gap:4px;min-width:160px}.field>label,.group-title{font-size:11px;color:var(--muted)}.object-group{border-left:2px solid var(--line);padding-left:9px}.execution-box{border:1px solid var(--line);background:#fafbfc;border-radius:6px;padding:8px;min-width:360px}.execution-head{display:flex;align-items:center;gap:8px;margin:5px 0 8px}.actions{display:flex;flex-wrap:wrap;gap:5px}.empty{padding:24px;text-align:center;color:var(--muted)}.repo-tabs{display:flex;gap:4px;padding:8px;border-bottom:1px solid var(--line);background:var(--head)}.repo-tab.active{background:#eef4ff;border-color:#8fb3ff}.repo-id{width:280px}.repo-action{width:100px}.file-input{display:none}.badge{font-size:11px;background:#eef1f5;color:#56606b;padding:2px 6px;border-radius:999px}.missing{font-size:11px;color:var(--danger);margin-top:2px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <strong>Timeline Scenario Editor</strong>
+    <span id="definitionStatus" class="status">Command Definition未読込</span>
+    <div class="spacer"></div>
+    <button id="loadDefinitions">Command Definition読込</button>
+    <button id="loadTimeline">Timeline読込</button>
+    <button id="saveTimeline" class="primary">Timeline保存</button>
+    <input id="definitionFile" class="file-input" type="file" accept=".json,application/json">
+    <input id="timelineFile" class="file-input" type="file" accept=".json,application/json">
+  </div>
+  <div class="tabs">
+    <button class="tab active" data-tab="scenario">Scenario</button>
+    <button class="tab" data-tab="repositories">Repositories</button>
+  </div>
+
+  <section id="scenarioView">
+    <div class="toolbar">
+      <button id="addEvent">行追加</button>
+      <button id="sortAsc">Time ↑</button>
+      <button id="sortDesc">Time ↓</button>
+      <button id="sortCommand">Time維持 + Command</button>
+      <span id="scenarioStatus" class="status"></span>
+    </div>
+    <div class="content"><div class="panel">
+      <table><thead><tr><th class="time-col">Time</th><th class="command-col">Command</th><th>Arguments</th><th class="action-col">Actions</th></tr></thead><tbody id="scenarioBody"></tbody></table>
+      <div id="scenarioEmpty" class="empty">Timelineに行がありません。</div>
+    </div></div>
+  </section>
+
+  <section id="repositoriesView" hidden>
+    <div class="content"><div class="panel">
+      <div id="repoTabs" class="repo-tabs"></div>
+      <div class="toolbar">
+        <button id="addRepoRow">行追加</button>
+        <button id="loadRepo">CSV読込</button>
+        <button id="saveRepo">CSV保存</button>
+        <span id="repoStatus" class="status"></span>
+        <input id="repoFile" class="file-input" type="file" accept=".csv,text/csv">
+      </div>
+      <table><thead><tr><th class="repo-id">ID</th><th>Path</th><th class="repo-action">Actions</th></tr></thead><tbody id="repoBody"></tbody></table>
+      <div id="repoEmpty" class="empty">Repositoryに行がありません。</div>
+    </div></div>
+  </section>
+</div>
+<script>
+"use strict";
+
+const state={definitions:{commands:[]},commandMap:new Map(),timeline:[],repositories:new Map(),activeRepo:"Sound"};
+for(const name of ["Sound","Light","Image","UiTarget"]) state.repositories.set(name,[]);
+const $=id=>document.getElementById(id);
+
+// ---------- Tabs ----------
+document.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()=>{
+  document.querySelectorAll("[data-tab]").forEach(x=>x.classList.toggle("active",x===b));
+  $("scenarioView").hidden=b.dataset.tab!=="scenario";
+  $("repositoriesView").hidden=b.dataset.tab!=="repositories";
+}));
+
+// ---------- File I/O ----------
+$("loadDefinitions").onclick=()=>$("definitionFile").click();
+$("loadTimeline").onclick=()=>$("timelineFile").click();
+$("loadRepo").onclick=()=>$("repoFile").click();
+$("saveTimeline").onclick=()=>download("timeline.json",JSON.stringify(state.timeline,null,2),"application/json");
+$("saveRepo").onclick=()=>download(`${state.activeRepo.toLowerCase()}-repository.csv`,toCsv(activeRepo()),"text/csv");
+
+$("definitionFile").onchange=async e=>{
+  const f=e.target.files[0]; if(!f)return;
+  try{loadDefinitions(JSON.parse(await f.text()));}catch(err){alert(`Command Definition読込失敗\n${err.message}`);} e.target.value="";
+};
+$("timelineFile").onchange=async e=>{
+  const f=e.target.files[0]; if(!f)return;
+  try{const v=JSON.parse(await f.text());if(!Array.isArray(v))throw new Error("ルートは配列である必要があります。");state.timeline=v;renderScenario();}
+  catch(err){alert(`Timeline読込失敗\n${err.message}`);} e.target.value="";
+};
+$("repoFile").onchange=async e=>{
+  const f=e.target.files[0]; if(!f)return;
+  try{state.repositories.set(state.activeRepo,parseCsv(await f.text()).map(x=>({id:x.id??"",path:x.path??""})));renderRepo();renderScenario();}
+  catch(err){alert(`Repository CSV読込失敗\n${err.message}`);} e.target.value="";
+};
+
+function loadDefinitions(doc){
+  if(!doc||!Array.isArray(doc.commands))throw new Error("commands配列がありません。");
+  state.definitions=doc;state.commandMap=new Map();
+  for(const c of doc.commands){if(!c.id||!Array.isArray(c.parameters))throw new Error("不正なCommand Definitionです。");if(state.commandMap.has(c.id))throw new Error(`Command ID重複: ${c.id}`);state.commandMap.set(c.id,c);}
+  const sources=new Set(["Sound","Light","Image","UiTarget"]);doc.commands.forEach(c=>c.parameters.forEach(p=>collectSources(p,sources)));
+  for(const s of sources)if(!state.repositories.has(s))state.repositories.set(s,[]);
+  $("definitionStatus").textContent=`${doc.commands.length} commands`;renderRepoTabs();renderScenario();
+}
+function collectSources(d,set){if(d.source)set.add(d.source);if(d.type==="object")for(const p of d.properties??[])collectSources(p,set);}
+
+// ---------- Scenario ----------
+$("addEvent").onclick=()=>{state.timeline.push({time:0,execution:createEmptyExecution()});renderScenario();};
+$("sortAsc").onclick=()=>{state.timeline=stableSort(state.timeline,(a,b)=>+a.time-+b.time);renderScenario();};
+$("sortDesc").onclick=()=>{state.timeline=stableSort(state.timeline,(a,b)=>+b.time-+a.time);renderScenario();};
+$("sortCommand").onclick=()=>{state.timeline=stableSort(state.timeline,(a,b)=>{const t=+a.time-+b.time;return t||String(a.execution?.command??"").localeCompare(String(b.execution?.command??""));});renderScenario();};
+
+function renderScenario(){
+  const body=$("scenarioBody");body.innerHTML="";$("scenarioEmpty").hidden=state.timeline.length>0;$("scenarioStatus").textContent=`${state.timeline.length} events`;
+  state.timeline.forEach((ev,i)=>body.appendChild(renderEventRow(ev,i)));
+}
+function renderEventRow(ev,index){
+  normalizeExecution(ev.execution??=(createEmptyExecution()));
+  const tr=document.createElement("tr");
+  const tdTime=document.createElement("td"),time=document.createElement("input");time.type="number";time.min="0";time.step="0.01";time.value=ev.time??0;time.style.width="100%";time.oninput=()=>ev.time=Number(time.value);tdTime.append(time);
+  const tdCmd=document.createElement("td");const cmd=commandSelect(ev.execution.command,id=>{ev.execution=createExecution(id);renderScenario();});cmd.style.width="100%";tdCmd.append(cmd);
+  const tdArgs=document.createElement("td");tdArgs.append(renderArguments(ev.execution));
+  const tdAct=document.createElement("td"),acts=document.createElement("div");acts.className="actions";
+  acts.append(btn("複製","small",()=>{state.timeline.splice(index+1,0,clone(ev));renderScenario();}),btn("↑","small",()=>{if(index>0){[state.timeline[index-1],state.timeline[index]]=[state.timeline[index],state.timeline[index-1]];renderScenario();}}),btn("↓","small",()=>{if(index<state.timeline.length-1){[state.timeline[index+1],state.timeline[index]]=[state.timeline[index],state.timeline[index+1]];renderScenario();}}),btn("削除","small danger",()=>{state.timeline.splice(index,1);renderScenario();}));tdAct.append(acts);
+  tr.append(tdTime,tdCmd,tdArgs,tdAct);return tr;
+}
+function renderArguments(ex){
+  normalizeExecution(ex);const root=document.createElement("div");root.className="arg-grid";const def=state.commandMap.get(ex.command);
+  if(!def){const x=document.createElement("span");x.className="missing";x.textContent=ex.command?`Definition未登録: ${ex.command}`:"Command未選択";root.append(x);return root;}
+  for(const p of def.parameters){ensureValue(ex.arguments,p.name,p);root.append(renderParameter(p,ex.arguments,p.name));}
+  return root;
+}
+function renderParameter(d,parent,key){
+  switch(d.type){case"string":return renderString(d,parent,key);case"int":case"float":return renderNumber(d,parent,key);case"bool":return renderBool(d,parent,key);case"enum":return renderEnum(d,parent,key);case"object":return renderObject(d,parent,key);case"execution":return renderExecution(d,parent,key);default:return unsupported(d);}
+}
+function renderString(d,p,k){const f=field(d.name);if(d.source)f.append(repoSelect(d.source,p[k]??"",v=>p[k]=v));else{const i=document.createElement("input");i.value=p[k]??"";i.oninput=()=>p[k]=i.value;f.append(i);}return f;}
+function renderNumber(d,p,k){const f=field(d.name),i=document.createElement("input");i.type="number";i.step=d.type==="int"?"1":"any";i.value=p[k]??0;i.oninput=()=>p[k]=d.type==="int"?Math.trunc(Number(i.value)):Number(i.value);f.append(i);return f;}
+function renderBool(d,p,k){const f=field(d.name),i=document.createElement("input");i.type="checkbox";i.checked=!!p[k];i.onchange=()=>p[k]=i.checked;f.append(i);return f;}
+function renderEnum(d,p,k){const f=field(d.name),opts=d.options??[];if(d.multiSelect){const s=document.createElement("select");s.multiple=true;s.size=Math.min(Math.max(opts.length,2),6);const selected=new Set(String(p[k]??"").split(",").map(x=>x.trim()).filter(Boolean));for(const o of opts){const x=new Option(o,o,false,selected.has(o));s.append(x);}s.onchange=()=>p[k]=Array.from(s.selectedOptions).map(x=>x.value).join(", ");f.append(s);return f;}const s=document.createElement("select");for(const o of opts)s.append(new Option(o,o));if(!opts.includes(p[k]))p[k]=opts[0]??"";s.value=p[k];s.onchange=()=>p[k]=s.value;f.append(s);return f;}
+function renderObject(d,p,k){if(!p[k]||typeof p[k]!=="object"||Array.isArray(p[k]))p[k]={};if(d.source){const f=field(d.name),prop=repoValueProperty(d);if(!prop){const x=document.createElement("span");x.className="missing";x.textContent="source付きobjectのDefinitionが不正です";f.append(x);return f;}ensureValue(p[k],prop.name,prop);f.append(repoSelect(d.source,p[k][prop.name],v=>p[k][prop.name]=v));return f;}const g=document.createElement("div");g.className="object-group";const t=document.createElement("div");t.className="group-title";t.textContent=d.name;g.append(t);const grid=document.createElement("div");grid.className="arg-grid";for(const prop of d.properties??[]){ensureValue(p[k],prop.name,prop);grid.append(renderParameter(prop,p[k],prop.name));}g.append(grid);return g;}
+function renderExecution(d,p,k){if(!p[k]||typeof p[k]!=="object")p[k]=createEmptyExecution();const ex=p[k];normalizeExecution(ex);const box=document.createElement("div");box.className="execution-box";const title=document.createElement("div");title.className="group-title";title.textContent=d.name;const head=document.createElement("div");head.className="execution-head";const badge=document.createElement("span");badge.className="badge";badge.textContent="Execution";head.append(badge,commandSelect(ex.command,id=>{p[k]=createExecution(id);renderScenario();}));box.append(title,head,renderArguments(ex));return box;}
+function unsupported(d){const f=field(d.name),x=document.createElement("span");x.className="missing";x.textContent=`未対応type: ${d.type}`;f.append(x);return f;}
+
+function createEmptyExecution(){return{command:"",arguments:{}};}
+function createExecution(id){const def=state.commandMap.get(id);return{command:id??"",arguments:def?defaultArgs(def.parameters):{}};}
+function defaultArgs(params){const o={};for(const p of params??[])o[p.name]=defaultValue(p);return o;}
+function defaultValue(d){switch(d.type){case"string":return"";case"int":case"float":return 0;case"bool":return false;case"enum":return"";case"object":{const o={};for(const p of d.properties??[])o[p.name]=defaultValue(p);return o;}case"execution":return createEmptyExecution();default:return null;}}
+function ensureValue(o,k,d){if(!Object.hasOwn(o,k)||o[k]===null||o[k]===undefined)o[k]=defaultValue(d);}
+function normalizeExecution(ex){if(typeof ex.command!=="string")ex.command="";if(!ex.arguments||typeof ex.arguments!=="object"||Array.isArray(ex.arguments))ex.arguments={};}
+function repoValueProperty(d){const p=d.properties??[];return p.length===1&&p[0].type==="string"?p[0]:null;}
+
+// ---------- Repositories ----------
+$("addRepoRow").onclick=()=>{activeRepo().push({id:"",path:""});renderRepo();};
+function renderRepoTabs(){const root=$("repoTabs");root.innerHTML="";for(const name of state.repositories.keys()){const b=btn(name,"repo-tab",()=>{state.activeRepo=name;renderRepoTabs();renderRepo();});b.classList.toggle("active",name===state.activeRepo);root.append(b);}}
+function renderRepo(){const body=$("repoBody"),rows=activeRepo();body.innerHTML="";$("repoEmpty").hidden=rows.length>0;$("repoStatus").textContent=`${state.activeRepo}: ${rows.length} entries`;rows.forEach((r,i)=>body.append(renderRepoRow(r,i)));}
+function renderRepoRow(r,index){const tr=document.createElement("tr"),tdId=document.createElement("td"),id=document.createElement("input");id.value=r.id;id.style.width="100%";let old=r.id;id.onchange=()=>{const next=id.value.trim();if(next===old)return;if(next&&activeRepo().some((x,i)=>i!==index&&x.id===next)){alert(`ID '${next}' は既に存在します。`);id.value=old;return;}if(old)renameRefs(state.activeRepo,old,next);r.id=next;old=next;renderScenario();};tdId.append(id);const tdPath=document.createElement("td"),path=document.createElement("input");path.value=r.path;path.style.width="100%";path.oninput=()=>r.path=path.value;tdPath.append(path);const tdAct=document.createElement("td");tdAct.append(btn("削除","small danger",()=>deleteRepoRow(index)));tr.append(tdId,tdPath,tdAct);return tr;}
+function deleteRepoRow(index){const rows=activeRepo(),r=rows[index];if(!r)return;const n=countRefs(state.activeRepo,r.id);if(n>0&&!confirm(`'${r.id}' は ${n} 箇所で使用されています。\n削除すると参照値を空欄にします。削除しますか？`))return;if(n>0)clearRefs(state.activeRepo,r.id);rows.splice(index,1);renderRepo();renderScenario();}
+function activeRepo(){if(!state.repositories.has(state.activeRepo))state.repositories.set(state.activeRepo,[]);return state.repositories.get(state.activeRepo);}
+function repoSelect(source,current,onChange){const wrap=document.createElement("div"),s=document.createElement("select"),ids=(state.repositories.get(source)??[]).map(x=>x.id).filter(Boolean);s.append(new Option("",""));if(current&&!ids.includes(current)){const x=new Option(`⚠ ${current}`,current);s.append(x);s.classList.add("invalid");}for(const id of ids)s.append(new Option(id,id));s.value=current??"";s.onchange=()=>{s.classList.remove("invalid");onChange(s.value);};wrap.append(s);if(current&&!ids.includes(current)){const m=document.createElement("div");m.className="missing";m.textContent=`${source} Repositoryに存在しません`;wrap.append(m);}return wrap;}
+
+// ---------- Repository reference traversal ----------
+function countRefs(source,id){let n=0;visitRefs(source,r=>{if(r.value===id)n++;});return n;}
+function renameRefs(source,oldId,newId){visitRefs(source,r=>{if(r.value===oldId)r.set(newId);});}
+function clearRefs(source,id){visitRefs(source,r=>{if(r.value===id)r.set("");});}
+function visitRefs(source,visitor){for(const ev of state.timeline)if(ev.execution)visitExecution(ev.execution,source,visitor);}
+function visitExecution(ex,source,visitor){const def=state.commandMap.get(ex.command);if(!def)return;for(const p of def.parameters)visitParam(p,ex.arguments,p.name,source,visitor);}
+function visitParam(d,parent,key,source,visitor){if(!parent||!Object.hasOwn(parent,key))return;const v=parent[key];if(d.type==="execution"){if(v)visitExecution(v,source,visitor);return;}if(d.type!=="object"||!v)return;if(d.source===source){const prop=repoValueProperty(d);if(prop)visitor({value:v[prop.name],set:next=>v[prop.name]=next});}for(const p of d.properties??[])visitParam(p,v,p.name,source,visitor);}
+
+// ---------- CSV ----------
+function parseCsv(text){const rows=parseCsvRows(text);if(!rows.length)return[];const headers=rows[0].map(x=>x.trim());return rows.slice(1).filter(r=>r.some(x=>x!=="")).map(r=>Object.fromEntries(headers.map((h,i)=>[h,r[i]??""])));}
+function parseCsvRows(text){const rows=[];let row=[],field="",quoted=false;for(let i=0;i<text.length;i++){const c=text[i];if(quoted){if(c==='"'){if(text[i+1]==='"'){field+='"';i++;}else quoted=false;}else field+=c;continue;}if(c==='"')quoted=true;else if(c===","){row.push(field);field="";}else if(c==="\n"){row.push(field.replace(/\r$/, ""));rows.push(row);row=[];field="";}else field+=c;}row.push(field.replace(/\r$/, ""));if(row.length>1||row[0]!=="")rows.push(row);return rows;}
+function toCsv(rows){return [["id","path"],...rows.map(r=>[r.id??"",r.path??""])].map(r=>r.map(csvEscape).join(",")).join("\r\n");}
+function csvEscape(v){const s=String(v??"");return /[",\r\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;}
+
+// ---------- Utilities ----------
+function commandSelect(current,onChange){const s=document.createElement("select");s.append(new Option("",""));for(const c of state.definitions.commands)s.append(new Option(c.id,c.id));if(current&&!state.commandMap.has(current)){s.insertBefore(new Option(`⚠ ${current}`,current),s.children[1]??null);s.classList.add("invalid");}s.value=current??"";s.onchange=()=>{s.classList.remove("invalid");onChange(s.value);};return s;}
+function field(name){const f=document.createElement("div");f.className="field";const l=document.createElement("label");l.textContent=name;f.append(l);return f;}
+function btn(text,classes,fn){const b=document.createElement("button");b.type="button";b.textContent=text;for(const c of (classes??"").split(" "))if(c)b.classList.add(c);b.onclick=fn;return b;}
+function clone(v){return JSON.parse(JSON.stringify(v));}
+function stableSort(a,cmp){return a.map((v,i)=>({v,i})).sort((x,y)=>cmp(x.v,y.v)||x.i-y.i).map(x=>x.v);}
+function download(name,text,mime){const blob=new Blob([text],{type:`${mime};charset=utf-8`}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=name;document.body.append(a);a.click();a.remove();URL.revokeObjectURL(url);}
+
+renderRepoTabs();renderRepo();renderScenario();
+</script>
+</body>
+</html>

@@ -1,0 +1,69 @@
+{
+  "commands": [
+    {
+      "id": "PlaySound",
+      "parameters": [
+        {
+          "name": "soundId",
+          "type": "object",
+          "source": "Sound",
+          "properties": [
+            {
+              "name": "value",
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "name": "volume",
+          "type": "float"
+        }
+      ]
+    },
+    {
+      "id": "SetDiagCommand",
+      "parameters": [
+        {
+          "name": "id",
+          "type": "object",
+          "properties": [
+            {
+              "name": "value",
+              "type": "int"
+            }
+          ]
+        },
+        {
+          "name": "execution",
+          "type": "execution"
+        }
+      ]
+    },
+    {
+      "id": "SetUiState",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "object",
+          "source": "UiTarget",
+          "properties": [
+            {
+              "name": "value",
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "name": "state",
+          "type": "enum",
+          "options": [
+            "Normal",
+            "Disabled",
+            "Hidden"
+          ],
+          "multiSelect": false
+        }
+      ]
+    }
+  ]
+}

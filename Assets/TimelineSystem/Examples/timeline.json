@@ -1,0 +1,15 @@
+[
+  {
+    "time": 0.0,
+    "command": "PlaySound",
+    "arguments": {
+      "request": {
+        "soundId": "Warning01",
+        "settings": {
+          "volume": 0.8,
+          "position": "Front"
+        }
+      }
+    }
+  }
+]
