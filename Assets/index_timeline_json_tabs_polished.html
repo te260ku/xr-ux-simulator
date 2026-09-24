@@ -1,0 +1,3898 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Timeline CSV Editor V2</title>
+<style>
+:root{
+  --bg:#f5f7fa;
+  --panel:#ffffff;
+  --line:#d9dee7;
+  --text:#20242a;
+  --muted:#6b7280;
+  --accent:#2563eb;
+  --danger:#b42318;
+  --ok:#067647;
+  --warn:#b54708;
+  --soft:#eef2f7;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
+  color:var(--text);
+  background:var(--bg);
+}
+button,input,select{font:inherit}
+button{
+  border:1px solid var(--line);
+  background:#fff;
+  border-radius:7px;
+  padding:7px 11px;
+  cursor:pointer;
+}
+button:hover{background:#f8fafc}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+button.danger{color:var(--danger)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.app{
+  height:100vh;
+  display:grid;
+  grid-template-rows:auto auto 1fr;
+}
+header{
+  background:#fff;
+  border-bottom:1px solid var(--line);
+  padding:14px 18px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+}
+header h1{font-size:18px;margin:0}
+header .sub{font-size:12px;color:var(--muted);margin-top:3px}
+.toolbar{
+  background:#fff;
+  border-bottom:1px solid var(--line);
+  padding:10px 18px;
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  align-items:center;
+}
+.repo-group{
+  margin-bottom:14px;
+}
+.repo-row{
+  grid-template-columns:180px minmax(0,1fr) auto auto;
+}
+.repo-item{
+  grid-template-columns:minmax(180px,1fr) minmax(260px,2fr) 110px auto;
+}
+@media(max-width:980px){
+  .repo-row,
+  .repo-item{
+    grid-template-columns:1fr;
+  }
+}
+.file-btn{position:relative;overflow:hidden}
+.file-btn input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.workspace{
+  min-height:0;
+  display:grid;
+  grid-template-columns:minmax(520px,1.3fr) minmax(360px,.7fr);
+  gap:12px;
+  padding:12px;
+}
+.panel{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:10px;
+  min-height:0;
+  overflow:hidden;
+}
+.panel-header{
+  padding:10px 12px;
+  border-bottom:1px solid var(--line);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
+.editor-tabs{
+  display:flex;
+  align-items:flex-end;
+  gap:0;
+  min-width:0;
+  overflow-x:auto;
+  scrollbar-width:thin;
+  scrollbar-color:transparent transparent;
+}
+.editor-tabs::-webkit-scrollbar{
+  height:4px;
+}
+.editor-tabs::-webkit-scrollbar-thumb{
+  background:transparent;
+}
+.editor-tabs:hover::-webkit-scrollbar-thumb{
+  background:#d0d5dd;
+}
+
+.editor-tab{
+  position:relative;
+  flex:0 0 auto;
+  height:39px;
+  margin:0;
+  padding:0 15px;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  color:#667085;
+  font-size:12px;
+  font-weight:600;
+  line-height:39px;
+  white-space:nowrap;
+  cursor:pointer;
+}
+
+.editor-tab:hover{
+  background:transparent;
+  color:#344054;
+}
+
+.editor-tab::after{
+  content:"";
+  position:absolute;
+  left:15px;
+  right:15px;
+  bottom:0;
+  height:2px;
+  border-radius:2px 2px 0 0;
+  background:transparent;
+}
+
+.editor-tab.active{
+  color:#344054;
+  background:transparent;
+}
+
+.editor-tab.active::after{
+  background:var(--accent);
+}
+
+/* Scenario is its own editing mode; repositories form the next group. */
+.editor-tab.repository-tab.first-repository-tab{
+  margin-left:14px;
+}
+
+/* Push read-only reference data to the far right. */
+.editor-tab-spacer{
+  flex:1 1 48px;
+  min-width:32px;
+}
+
+.editor-tab.reference-tab{
+  color:#7b8494;
+  font-weight:500;
+  padding-left:16px;
+  padding-right:16px;
+}
+
+.editor-tab.reference-tab:hover{
+  color:#475467;
+  background:transparent;
+}
+
+.editor-tab.reference-tab.active{
+  color:#344054;
+  background:transparent;
+}
+
+.editor-tab.reference-tab::after{
+  left:16px;
+  right:16px;
+}
+.editor-header{padding:0;align-items:stretch}
+.editor-header-right{margin-left:auto;display:flex;align-items:center;padding:0 12px}
+.editor-toolbar{padding:8px 10px;border-bottom:1px solid var(--line);display:flex;gap:6px;flex-wrap:wrap;align-items:center;min-height:48px}
+.editor-toolbar.hidden{display:none}
+.editor-content{min-height:0;height:100%}
+.editor-content.hidden{display:none}
+
+.panel-header h2{font-size:14px;margin:0}
+.panel-body{padding:12px}
+.scenario-panel{display:grid;grid-template-rows:auto auto 1fr}
+
+
+.direct-table{
+  table-layout:fixed;
+  width:max-content;
+  min-width:100%;
+  border-collapse:separate;
+  border-spacing:0;
+}
+.direct-table th,
+.direct-table td{
+  vertical-align:middle;
+  border-right:1px solid var(--line);
+  border-bottom:1px solid var(--line);
+  padding:0;
+  background:#fff;
+}
+.direct-table th{
+  height:34px;
+  padding:0 8px;
+  background:#f8fafc;
+  color:#475467;
+  font-weight:600;
+  white-space:nowrap;
+}
+.direct-table th:first-child,
+.direct-table td:first-child{
+  border-left:1px solid var(--line);
+}
+.direct-table thead tr:first-child th{
+  border-top:1px solid var(--line);
+}
+.grid-col-no{width:46px;min-width:46px;max-width:46px}
+.grid-col-time{width:92px;min-width:92px;max-width:92px}
+.grid-col-command{width:180px;min-width:180px;max-width:180px}
+.grid-col-arg{width:170px;min-width:170px;max-width:170px}
+.grid-col-status{width:92px;min-width:92px;max-width:92px}
+
+.grid-cell{
+  height:54px;
+  display:grid;
+  align-items:stretch;
+}
+.grid-edit-cell{
+  grid-template-rows:18px 1fr;
+  padding:4px 6px 5px;
+}
+.grid-cell-label{
+  font-size:10px;
+  line-height:18px;
+  color:#667085;
+  font-weight:600;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.grid-control{
+  width:100%;
+  height:28px;
+  min-width:0;
+  border:none;
+  border-radius:0;
+  padding:3px 5px;
+  background:transparent;
+  color:var(--text);
+  outline:none;
+}
+.grid-control:focus{
+  outline:2px solid #84adff;
+  outline-offset:-2px;
+  background:#fff;
+}
+select.grid-control{
+  padding-right:20px;
+  text-overflow:ellipsis;
+}
+.grid-multiselect{
+  position:relative;
+  width:100%;
+  min-width:0;
+}
+.grid-multiselect summary{
+  list-style:none;
+  cursor:pointer;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.grid-multiselect summary::-webkit-details-marker{display:none}
+.grid-multiselect-panel{
+  position:absolute;
+  z-index:50;
+  top:30px;
+  left:0;
+  min-width:100%;
+  max-height:220px;
+  overflow:auto;
+  padding:6px;
+  border:1px solid var(--line);
+  border-radius:7px;
+  background:#fff;
+  box-shadow:0 10px 24px rgba(16,24,40,.14);
+}
+.grid-multiselect-option{
+  display:flex;
+  align-items:center;
+  gap:7px;
+  padding:5px 6px;
+  white-space:nowrap;
+}
+.grid-multiselect-option:hover{background:#f8fafc}
+.grid-multiselect-option input{margin:0}
+.grid-edit-cell.invalid{
+  background:#fff4f3;
+}
+.grid-edit-cell.invalid .grid-control{
+  color:#b42318;
+}
+.grid-empty{
+  height:54px;
+  background:#fafafa;
+}
+.grid-simple-cell{
+  height:54px;
+  display:flex;
+  align-items:center;
+  padding:0 8px;
+}
+.grid-row-selected td{
+  background:#eef4ff;
+}
+.grid-row-selected .grid-empty{
+  background:#eef4ff;
+}
+.grid-row-selected .grid-control{
+  background:transparent;
+}
+.row-status{
+  font-weight:600;
+  cursor:default;
+}
+.row-status.ok{color:var(--ok)}
+.row-status.error{color:var(--danger)}
+
+.row-actions{
+  padding:8px 10px;
+  border-bottom:1px solid var(--line);
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+}
+.table-wrap{overflow:auto;min-height:0;background:#fff}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{
+  border-bottom:1px solid var(--line);
+  padding:8px 9px;
+  text-align:left;
+  vertical-align:middle;
+}
+th{
+  position:sticky;
+  top:0;
+  background:#f8fafc;
+  z-index:1;
+  font-weight:600;
+  color:#475467;
+}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:#f8fafc}
+tbody tr.selected{background:#eef4ff}
+.col-no{width:48px;color:var(--muted)}
+.col-time{width:90px}
+.col-command{width:160px}
+.col-status{width:90px}
+.status-ok{color:var(--ok);font-weight:600}
+.status-error{color:var(--danger);font-weight:600}
+.empty{
+  padding:34px 18px;
+  text-align:center;
+  color:var(--muted);
+}
+.inspector{
+  height:100%;
+  overflow:auto;
+}
+.field{
+  margin-bottom:14px;
+}
+.field label{
+  display:block;
+  font-size:12px;
+  font-weight:600;
+  color:#475467;
+  margin-bottom:5px;
+}
+.field .required{color:var(--danger);margin-left:3px}
+.field input,.field select{
+  width:100%;
+  border:1px solid #cfd5df;
+  border-radius:7px;
+  padding:8px 9px;
+  background:#fff;
+}
+.field input:focus,.field select:focus{
+  outline:2px solid #c7d7fe;
+  border-color:var(--accent);
+}
+.help{font-size:11px;color:var(--muted);margin-top:4px}
+.field-error{font-size:11px;color:var(--danger);margin-top:4px}
+.section{
+  margin-top:18px;
+  border-top:1px solid var(--line);
+  padding-top:14px;
+}
+.section-title{
+  font-size:12px;
+  font-weight:700;
+  margin-bottom:8px;
+  color:#475467;
+}
+.repo-group{
+  border:1px solid var(--line);
+  border-radius:8px;
+  margin-bottom:9px;
+  overflow:hidden;
+}
+.repo-row{
+  display:grid;
+  grid-template-columns:140px minmax(0,1fr) auto auto;
+  align-items:center;
+  gap:7px;
+  padding:8px;
+  background:#fff;
+}
+.repo-name{font-size:12px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+.repo-status{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.repo-file{position:relative;overflow:hidden}
+.repo-file input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.repo-items{
+  border-top:1px solid var(--line);
+  background:#f8fafc;
+}
+.repo-items summary{
+  cursor:pointer;
+  padding:8px 10px;
+  font-size:12px;
+  color:#475467;
+  user-select:none;
+}
+.repo-item{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(140px,1fr) auto auto;
+  gap:10px;
+  align-items:center;
+  padding:7px 10px;
+  border-top:1px solid #e4e7ec;
+  background:#fff;
+}
+.repo-item-id{
+  font-size:12px;
+  font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+  overflow-wrap:anywhere;
+}
+.repo-item-meta{
+  font-size:11px;
+  color:var(--muted);
+  white-space:nowrap;
+}
+.repo-delete{
+  padding:4px 8px;
+  font-size:11px;
+  color:var(--danger);
+}
+.repo-item-actions{
+  display:flex;
+  gap:5px;
+  flex-wrap:wrap;
+}
+.repo-small-btn{
+  padding:4px 8px;
+  font-size:11px;
+}
+.repo-add-row{
+  display:flex;
+  justify-content:flex-end;
+  padding:8px 10px;
+  border-top:1px solid #e4e7ec;
+  background:#f8fafc;
+}
+.validation-box{
+  background:#fff6ed;
+  border:1px solid #fedf89;
+  border-radius:8px;
+  padding:9px 10px;
+  margin-bottom:12px;
+  font-size:12px;
+  color:#7a2e0e;
+}
+.validation-box.ok{
+  background:#ecfdf3;
+  border-color:#abefc6;
+  color:#05603a;
+}
+.badge{
+  display:inline-block;
+  border-radius:999px;
+  background:var(--soft);
+  padding:2px 7px;
+  font-size:11px;
+  color:#475467;
+}
+.spacer{flex:1}
+.meta{font-size:12px;color:var(--muted)}
+@media(max-width:980px){
+  .workspace{grid-template-columns:1fr;overflow:auto}
+  .panel{min-height:440px}
+}
+
+</style>
+
+
+<style id="calm-grid-style">
+/* Calm, Excel-like grid: structure comes from alignment and light borders. */
+.direct-table th{
+  background:#f5f6f8;
+  color:#344054;
+  font-weight:600;
+  border-color:#dfe3e8;
+  border-bottom:1px solid #dfe3e8;
+}
+
+.direct-table tbody tr td{
+  background:#fff;
+  border-right:1px solid #e4e7ec;
+  border-bottom:1px solid #e4e7ec;
+}
+
+/* Remove zebra striping and column-specific backgrounds. */
+.direct-table tbody tr:nth-child(even) td,
+td.grid-col-command .grid-edit-cell,
+.grid-row-selected td,
+.grid-row-selected .grid-edit-cell,
+.grid-row-selected .grid-simple-cell,
+.grid-row-selected .grid-empty{
+  background:#fff !important;
+}
+
+/* Minimal selected-row cue: only a left accent. */
+.grid-row-selected td:first-child{
+  box-shadow:inset 3px 0 0 var(--accent);
+}
+
+/* Cell label: no band, no block background. */
+.grid-edit-cell{
+  padding:4px 6px 5px;
+  grid-template-rows:18px 1fr;
+  background:#fff;
+}
+
+.grid-cell-label{
+  display:flex;
+  align-items:center;
+  padding:0;
+  background:transparent;
+  border:none;
+  color:#667085;
+  font-size:10px;
+  font-weight:500;
+  line-height:18px;
+  letter-spacing:0;
+}
+
+/* Values remain visually quiet. */
+.grid-control{
+  height:28px;
+  padding:3px 2px;
+  border:none;
+  border-radius:0;
+  background:transparent;
+  color:#101828;
+  font-weight:400;
+  outline:none;
+}
+
+td.grid-col-command .grid-control{
+  font-weight:500;
+  color:#101828;
+}
+
+.grid-control:hover:not(:disabled){
+  background:#fafbfc;
+}
+
+.grid-control:focus{
+  outline:2px solid #84adff;
+  outline-offset:-2px;
+  background:#fff;
+}
+
+/* Error state: no fill, only a red underline + text. */
+.grid-edit-cell.invalid{
+  background:#fff !important;
+  box-shadow:none;
+}
+
+.grid-edit-cell.invalid .grid-cell-label{
+  background:transparent;
+  color:#b42318;
+  border:none;
+}
+
+.grid-edit-cell.invalid .grid-control{
+  color:#b42318;
+  border-bottom:2px solid #f04438;
+}
+
+/* Status returns to plain text. */
+.row-status,
+.status-pill{
+  display:inline;
+  padding:0;
+  border:none;
+  border-radius:0;
+  background:transparent !important;
+  font-size:12px;
+  font-weight:500;
+}
+
+.row-status.ok,
+.status-pill.ok{
+  color:#067647;
+}
+
+.row-status.error,
+.status-pill.error{
+  color:#b42318;
+}
+
+.status-symbol{
+  display:none;
+}
+
+/* Keep the table dense and regular. */
+.grid-cell,
+.grid-empty,
+.grid-simple-cell{
+  min-height:54px;
+}
+
+/* Make the editable surface fill the complete table cell. */
+.grid-edit-cell{
+  position:relative;
+  display:block;
+  padding:0;
+  overflow:visible;
+}
+
+.grid-edit-cell > .grid-cell-label{
+  position:absolute;
+  z-index:2;
+  top:5px;
+  left:8px;
+  right:8px;
+  height:16px;
+  line-height:16px;
+  pointer-events:none;
+}
+
+.grid-edit-cell > .grid-cell-label:empty{
+  display:none;
+}
+
+.grid-edit-cell > .grid-control{
+  display:block;
+  width:100%;
+  height:100%;
+  min-height:54px;
+  padding:0 8px;
+  cursor:text;
+}
+
+.grid-edit-cell > select.grid-control{
+  padding-right:26px;
+  cursor:pointer;
+}
+
+.grid-edit-cell > .grid-cell-label:not(:empty) + .grid-control{
+  padding:18px 8px 3px;
+}
+
+.grid-edit-cell > .grid-cell-label:not(:empty) + select.grid-control{
+  padding:18px 26px 3px 8px;
+}
+
+.grid-edit-cell > .grid-multiselect{
+  width:100%;
+  height:100%;
+}
+
+.grid-edit-cell > .grid-multiselect > summary.grid-control{
+  display:flex;
+  align-items:center;
+  width:100%;
+  height:100%;
+  min-height:54px;
+  padding:0 26px 0 8px;
+  cursor:pointer;
+}
+
+.grid-edit-cell > .grid-cell-label:not(:empty) + .grid-multiselect > summary.grid-control{
+  align-items:flex-end;
+  padding:18px 26px 7px 8px;
+}
+
+.grid-edit-cell > .grid-multiselect > .grid-multiselect-panel{
+  top:54px;
+}
+
+/* Keep the selected row unmistakable while preserving cell readability. */
+.direct-table tbody tr.grid-row-selected > td,
+.direct-table tbody tr.grid-row-selected > td .grid-edit-cell,
+.direct-table tbody tr.grid-row-selected > td .grid-simple-cell,
+.direct-table tbody tr.grid-row-selected > td .grid-empty{
+  background:#eaf2ff !important;
+}
+
+.direct-table tbody tr.grid-row-selected > td:first-child{
+  box-shadow:inset 4px 0 0 #2563eb;
+}
+
+.direct-table tbody tr.grid-row-selected > td:first-child .grid-simple-cell{
+  color:#175cd3;
+  font-weight:700;
+}
+
+
+/* ============================================================
+   Command Definitions / Repository
+   Single canonical style block for these two editor pages.
+   ============================================================ */
+
+.repository-editor{
+  height:100%;
+  min-height:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  padding:12px;
+}
+
+.repository-empty{
+  width:min(720px, 100%);
+  padding:34px 18px;
+  text-align:center;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.5;
+}
+
+/* Shared page meta */
+#commandDefinitionContent .repository-meta,
+#repositoryContent .repository-meta{
+  width:min(720px, 100%);
+  max-width:720px;
+  min-width:0;
+  display:flex;
+  align-items:baseline;
+  flex-wrap:nowrap;
+  gap:0;
+  margin-bottom:10px;
+  padding:0 1px;
+  color:#667085;
+  font-size:12px;
+  line-height:1.35;
+  letter-spacing:.005em;
+}
+
+#commandDefinitionContent .repository-meta strong,
+#repositoryContent .repository-meta strong{
+  flex:0 0 auto;
+  color:#344054;
+  font-size:13px;
+  font-weight:600;
+  line-height:1.35;
+  letter-spacing:.005em;
+}
+
+.definition-meta-file,
+.repo-meta-file{
+  flex:1 1 auto;
+  min-width:0;
+  margin-left:16px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#667085;
+}
+
+.definition-meta-count,
+.repo-meta-count{
+  flex:0 0 auto;
+  margin-left:16px;
+  white-space:nowrap;
+  text-align:right;
+  color:#98a2b3;
+  font-variant-numeric:tabular-nums;
+}
+
+/* Shared table frame */
+#commandDefinitionContent .repository-table-wrap,
+#repositoryContent .repository-table-wrap{
+  width:min(720px, 100%);
+  max-width:720px;
+  overflow:hidden;
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:#fff;
+}
+
+#commandDefinitionContent .repository-table,
+#repositoryContent .repository-table{
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  table-layout:fixed;
+  border-collapse:collapse;
+  font-size:12px;
+  line-height:1.45;
+}
+
+#commandDefinitionContent .repository-table th,
+#commandDefinitionContent .repository-table td,
+#repositoryContent .repository-table th,
+#repositoryContent .repository-table td{
+  border:0;
+  border-bottom:1px solid var(--line);
+  vertical-align:middle;
+}
+
+#commandDefinitionContent .repository-table th,
+#repositoryContent .repository-table th{
+  height:36px;
+  padding:0 10px;
+  background:#f8fafc;
+  color:#475467;
+  font-size:11px;
+  font-weight:600;
+  line-height:1.25;
+  letter-spacing:.02em;
+  text-align:left;
+}
+
+#commandDefinitionContent .repository-table tbody tr:last-child td,
+#repositoryContent .repository-table tbody tr:last-child td{
+  border-bottom:0;
+}
+
+/* ---------------- Command Definitions ---------------- */
+
+#commandDefinitionContent .repository-table-wrap{
+  overflow-x:hidden;
+}
+
+#commandDefinitionContent .repository-table th:nth-child(1),
+#commandDefinitionContent .repository-table td:nth-child(1){
+  width:34%;
+}
+
+#commandDefinitionContent .repository-table th:nth-child(2),
+#commandDefinitionContent .repository-table td:nth-child(2){
+  width:14%;
+}
+
+#commandDefinitionContent .repository-table th:nth-child(3),
+#commandDefinitionContent .repository-table td:nth-child(3){
+  width:18%;
+}
+
+#commandDefinitionContent .repository-table th:nth-child(4),
+#commandDefinitionContent .repository-table td:nth-child(4){
+  width:34%;
+}
+
+#commandDefinitionContent .definition-command-row td{
+  padding:8px 10px;
+  background:#f5f7fa;
+  border-bottom:1px solid var(--line);
+}
+
+#commandDefinitionContent .definition-command-row:not(:first-child) td{
+  border-top:1px solid #e4e7ec;
+}
+
+.definition-command-header{
+  min-width:0;
+  display:flex;
+  align-items:baseline;
+  gap:10px;
+}
+
+.definition-command-name{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#344054;
+  font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+  font-size:12px;
+  font-weight:600;
+  line-height:1.4;
+}
+
+.definition-command-count{
+  flex:0 0 auto;
+  color:#98a2b3;
+  font-size:11px;
+  line-height:1.4;
+  font-variant-numeric:tabular-nums;
+}
+
+#commandDefinitionContent .definition-parameter-row td{
+  padding:8px 10px;
+  color:#344054;
+}
+
+#commandDefinitionContent .definition-parameter-row:hover td{
+  background:#fafbfc;
+}
+
+.definition-parameter-name{
+  min-width:0;
+  font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+  font-size:11.5px;
+  line-height:1.45;
+  overflow-wrap:anywhere;
+  word-break:normal;
+}
+
+.definition-type,
+.definition-source{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#475467;
+  font-family:inherit;
+  font-size:12px;
+}
+
+.definition-details{
+  color:#667085;
+  overflow-wrap:anywhere;
+  word-break:normal;
+}
+
+.definition-empty-parameter{
+  color:#98a2b3;
+  font-style:italic;
+}
+
+/* ---------------- Repository ---------------- */
+
+.repository-edit-table{
+  width:100%;
+  table-layout:fixed;
+  border-collapse:collapse;
+}
+
+.repository-edit-table th,
+.repository-edit-table td{
+  padding:0;
+  background:#fff;
+  text-align:left;
+}
+
+.repository-edit-table tbody tr:hover td{
+  background:#f8fafc;
+}
+
+.repo-grid-col-id{width:25%}
+.repo-grid-col-path{width:50%}
+.repo-grid-col-used{width:12%}
+.repo-grid-col-actions{width:13%}
+
+.repository-edit-table th.repo-grid-col-used,
+.repository-edit-table td.repo-grid-col-used{
+  text-align:left;
+}
+
+.repo-definition-input{
+  display:block;
+  width:100%;
+  height:54px;
+  margin:0;
+  border:0;
+  border-radius:0;
+  padding:0 10px;
+  background:transparent;
+  color:var(--text);
+  outline:none;
+  font-size:12px;
+  line-height:1.4;
+  letter-spacing:.002em;
+}
+
+.repo-definition-input:hover{
+  background:transparent;
+}
+
+.repo-definition-input:focus{
+  background:#fff;
+  box-shadow:inset 0 0 0 2px #84adff;
+}
+
+.repo-definition-input.invalid{
+  color:var(--danger);
+  box-shadow:inset 0 -2px 0 #f04438;
+}
+
+.repo-definition-input.invalid:focus{
+  box-shadow:
+    inset 0 0 0 2px #84adff,
+    inset 0 -2px 0 #f04438;
+}
+
+.repo-id-input,
+.repo-path-input{
+  font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+}
+
+.repo-path-cell{
+  display:flex;
+  align-items:stretch;
+  width:100%;
+  height:54px;
+}
+
+.repo-path-input{
+  min-width:0;
+  flex:1 1 auto;
+  height:54px;
+}
+
+.repo-path-picker{
+  flex:0 0 38px;
+  width:38px;
+  height:54px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  color:#667085;
+  font-family:Arial,sans-serif;
+  font-size:18px;
+  line-height:1;
+  cursor:pointer;
+  user-select:none;
+}
+
+.repo-path-picker:hover{
+  background:#f2f4f7;
+  color:#344054;
+}
+
+.repo-path-picker input{
+  display:none;
+}
+
+.repo-used{
+  display:block;
+  width:100%;
+  line-height:54px;
+  padding-left:10px;
+  text-align:left;
+  color:#b0b7c3;
+  font-size:12px;
+  font-variant-numeric:tabular-nums;
+}
+
+.repo-used.has-reference{
+  color:#344054;
+  font-weight:600;
+}
+
+.repo-grid-col-actions{
+  text-align:center;
+}
+
+.repo-delete{
+  border:0;
+  background:transparent;
+  padding:6px 8px;
+  color:var(--danger);
+  font-size:11px;
+  letter-spacing:.005em;
+}
+
+.repo-delete:hover{
+  background:#fff4f3;
+}
+
+/* Repository toolbar aligned to the 720px table width */
+#repositoryToolbar{
+  display:block;
+  padding:8px 12px;
+}
+
+#repositoryToolbar.hidden{
+  display:none;
+}
+
+.repository-toolbar-inner{
+  width:min(720px, 100%);
+  max-width:720px;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  min-height:32px;
+}
+
+.repository-toolbar-inner .spacer{
+  flex:1;
+}
+
+
+/* Scenario toolbar */
+.scenario-toolbar{
+  padding:8px 10px;
+}
+
+.scenario-toolbar-inner{
+  width:100%;
+  display:flex;
+  align-items:center;
+  gap:18px;
+  min-height:32px;
+}
+
+.scenario-toolbar-group{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex:0 0 auto;
+}
+
+.scenario-toolbar-spacer{
+  flex:1 1 auto;
+  min-width:12px;
+}
+
+
+/* Time / Command header sorting */
+.direct-table th.sortable-header{
+  cursor:pointer;
+  user-select:none;
+}
+
+.direct-table th.sortable-header:hover{
+  background:#f2f4f7;
+}
+
+.direct-table th.sortable-header.active-sort{
+  background:#f2f4f7;
+}
+
+.sortable-header-content{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  min-width:0;
+}
+
+.sortable-header-label{
+  white-space:nowrap;
+}
+
+.sortable-header-indicator{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:16px;
+  height:16px;
+  flex:0 0 16px;
+  color:#98a2b3;
+  font-size:12px;
+  font-weight:700;
+  line-height:1;
+  text-align:center;
+  border-radius:4px;
+}
+
+.sortable-header.active-sort .sortable-header-indicator{
+  color:#344054;
+  background:#e9edf3;
+}
+
+.sortable-header:hover .sortable-header-indicator{
+  color:#667085;
+}
+
+.sortable-header.active-sort:hover .sortable-header-indicator{
+  color:#344054;
+}
+
+.scenario-delete-button{
+  border-color:transparent;
+  background:transparent;
+  color:#b42318;
+}
+
+.scenario-delete-button:hover:not(:disabled){
+  background:#fff4f3;
+  border-color:transparent;
+}
+
+.scenario-toolbar button:disabled,
+.scenario-toolbar select:disabled{
+  opacity:.42;
+  cursor:default;
+}
+
+@media (max-width:760px){
+  .scenario-toolbar-inner{
+    gap:10px;
+    flex-wrap:wrap;
+  }
+
+  .scenario-toolbar-spacer{
+    display:none;
+  }
+
+  .scenario-destructive-group{
+    margin-left:auto;
+  }
+}
+
+</style>
+
+</head>
+<body>
+<div class="app">
+  <header>
+    <div>
+      <h1>Timeline CSV Editor V2</h1>
+      <div class="sub">Command定義に基づくTimeline編集</div>
+    </div>
+    <div id="globalStatus" class="meta">Command定義未読込</div>
+  </header>
+
+  <div class="toolbar">
+    <label class="file-btn">
+      <button>Command定義を読込</button>
+      <input id="definitionFile" type="file" accept=".json,application/json">
+    </label>
+
+    <label class="file-btn">
+      <button>Timeline JSONを読込</button>
+      <input id="scenarioFile" type="file" accept=".json,application/json">
+    </label>
+
+    <button id="validateBtn">全体を検証</button>
+    <div class="spacer"></div>
+    <button id="exportBtn" class="primary">Timeline JSONを保存</button>
+  </div>
+  <div class="workspace">
+    <section class="panel scenario-panel">
+      <div class="panel-header editor-header">
+        <div id="editorTabs" class="editor-tabs"></div>
+        <div class="editor-header-right">
+          <span id="editorHeaderStatus" class="badge">0 rows</span>
+        </div>
+      </div>
+
+      <div id="scenarioToolbar" class="editor-toolbar scenario-toolbar">
+        <div class="scenario-toolbar-inner">
+          <div class="scenario-toolbar-group scenario-row-actions">
+            <button id="addBtn" class="primary">＋ 追加</button>
+            <button id="duplicateBtn">複製</button>
+          </div>
+
+          <div class="scenario-toolbar-spacer"></div>
+
+          <div class="scenario-toolbar-group scenario-destructive-group">
+            <button id="deleteBtn" class="scenario-delete-button">削除</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="repositoryToolbar" class="editor-toolbar hidden">
+        <div class="repository-toolbar-inner">
+          <label class="repo-file">
+            <button id="repositoryReloadBtn" type="button">再読み込み</button>
+            <input id="repositoryReloadFile" type="file" accept=".csv,text/csv">
+          </label>
+          <button id="repositorySaveBtn">保存</button>
+          <div class="spacer"></div>
+          <button id="repositoryAddIdBtn" class="primary">＋ ID追加</button>
+        </div>
+      </div>
+
+      <div id="scenarioContent" class="table-wrap editor-content">
+        <table class="direct-table">
+          <thead id="scenarioHead"></thead>
+          <tbody id="scenarioBody"></tbody>
+        </table>
+        <div id="tableEmpty" class="empty">Command定義を読み込み、行を追加してください。</div>
+      </div>
+
+      <div id="repositoryContent" class="repository-editor editor-content hidden">
+        <div id="repositoryMeta" class="repository-meta"></div>
+        <div id="repositoryTableHost"></div>
+      </div>
+
+      <div id="commandDefinitionContent" class="repository-editor editor-content hidden">
+        <div id="commandDefinitionMeta" class="repository-meta"></div>
+        <div id="commandDefinitionTableHost"></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+const state = {
+  definitions: new Map(),
+  definitionOrder: [],
+  definitionDocument: { commands: [] },
+  definitionFileName: "",
+  repositories: new Map(),
+  rows: [],
+  selectedIndex: -1,
+  timeSortDirection: null,
+  commandSortDirection: null,
+  activeEditor: "scenario"
+};
+
+const $ = (id) => document.getElementById(id);
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let i = 0;
+  let quoted = false;
+
+  while (i < text.length) {
+    const ch = text[i];
+
+    if (quoted) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i += 2;
+          continue;
+        }
+        quoted = false;
+        i++;
+        continue;
+      }
+      field += ch;
+      i++;
+      continue;
+    }
+
+    if (ch === '"') {
+      quoted = true;
+      i++;
+    } else if (ch === ",") {
+      row.push(field);
+      field = "";
+      i++;
+    } else if (ch === "\r") {
+      if (text[i + 1] === "\n") i++;
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+      i++;
+    } else if (ch === "\n") {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+      i++;
+    } else {
+      field += ch;
+      i++;
+    }
+  }
+
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+
+  return rows.filter(r => r.some(v => v.trim() !== ""));
+}
+
+function csvEscape(value) {
+  const s = value == null ? "" : String(value);
+  if (/[",\r\n]/.test(s)) return '"' + s.replaceAll('"', '""') + '"';
+  return s;
+}
+
+function rowsToObjects(rows) {
+  if (!rows.length) return [];
+  const headers = rows[0].map(h => h.trim());
+  return rows.slice(1).map(values => {
+    const obj = {};
+    headers.forEach((h, i) => obj[h] = values[i] ?? "");
+    return obj;
+  });
+}
+
+function toBoolText(value) {
+  const s = String(value ?? "").trim().toLowerCase();
+  if (s === "true" || s === "1") return "true";
+  if (s === "false" || s === "0") return "false";
+  return "";
+}
+
+function normalizeType(type) {
+  const t = String(type || "String").trim().toLowerCase();
+  if (["float","double","number"].includes(t)) return "Float";
+  if (["int","integer"].includes(t)) return "Int";
+  if (["bool","boolean"].includes(t)) return "Bool";
+  if (["enum"].includes(t)) return "Enum";
+  if (["command"].includes(t)) return "Command";
+  if (["repositorykey","repository_key","repo_key"].includes(t)) return "RepositoryKey";
+  if (["id"].includes(t) || t.endsWith("id")) return "RepositoryKey";
+  return "String";
+}
+
+function loadDefinitions(text, fileName = "") {
+  let document;
+  try {
+    document = JSON.parse(text);
+  } catch {
+    throw new Error("Command Definition JSONの形式が不正です。");
+  }
+
+  if (!document || !Array.isArray(document.commands)) {
+    throw new Error("Command Definition JSONに 'commands' 配列が必要です。");
+  }
+
+  const defs = new Map();
+  const order = [];
+  const sources = new Set();
+
+  for (const command of document.commands) {
+    const commandName = String(command?.id ?? "").trim();
+    if (!commandName) {
+      throw new Error("Command Definitionに空のCommand IDがあります。");
+    }
+    if (defs.has(commandName)) {
+      throw new Error(`Command ID '${commandName}' が重複しています。`);
+    }
+    if (!Array.isArray(command.parameters)) {
+      throw new Error(`${commandName}: parameters 配列が必要です。`);
+    }
+
+    const args = [];
+    let index = 1;
+
+    for (const parameter of command.parameters) {
+      index = appendDefinitionArgument(
+        args,
+        parameter,
+        parameter?.name ?? "",
+        [],
+        index,
+        null
+      );
+    }
+
+    defs.set(commandName, {
+      name: commandName,
+      args
+    });
+    order.push(commandName);
+
+    for (const arg of args) {
+      if (arg.source) sources.add(arg.source);
+    }
+  }
+
+  state.definitions = defs;
+  state.definitionOrder = order;
+  state.definitionDocument = document;
+  state.definitionFileName = fileName;
+
+  for (const existing of [...state.repositories.keys()]) {
+    if (!sources.has(existing)) {
+      state.repositories.delete(existing);
+    }
+  }
+
+  for (const source of sources) {
+    if (!state.repositories.has(source)) {
+      state.repositories.set(source, {
+        ids: [],
+        fileName: "",
+        loaded: false
+      });
+    }
+  }
+
+  if (state.activeEditor !== "scenario" &&
+      state.activeEditor !== "commandDefinitions" &&
+      !state.repositories.has(state.activeEditor)) {
+    state.activeEditor = "scenario";
+  }
+
+  for (const row of state.rows) {
+    if (!state.definitions.has(row.command)) {
+      row.command = "";
+      row.args = [];
+    }
+  }
+
+  $("globalStatus").textContent = `${defs.size} commands loaded`;
+  renderAll();
+}
+
+function appendDefinitionArgument(
+  result,
+  definition,
+  rootName,
+  memberPath,
+  index,
+  inheritedSource
+) {
+  const type = String(definition?.type ?? "").trim().toLowerCase();
+  const name = String(rootName ?? "").trim();
+
+  if (!name) {
+    throw new Error("Command Definitionにnameのないparameter/propertyがあります。");
+  }
+
+  if (type === "object") {
+    const properties = definition.properties;
+    if (!Array.isArray(properties)) {
+      throw new Error(`${name}: objectにはproperties配列が必要です。`);
+    }
+
+    const source = definition.source || inheritedSource || "";
+    let nextIndex = index;
+
+    for (const property of properties) {
+      nextIndex = appendDefinitionArgument(
+        result,
+        property,
+        name,
+        [...memberPath, property?.name ?? ""],
+        nextIndex,
+        source
+      );
+    }
+
+    return nextIndex;
+  }
+
+  const jsonPath = [name, ...memberPath];
+  const memberText = memberPath.join(".");
+
+  if (type === "execution") {
+    result.push({
+      index,
+      name,
+      memberPath: memberText,
+      jsonPath,
+      type: "Command",
+      required: true,
+      source: "",
+      defaultValue: "",
+      min: "",
+      max: "",
+      options: [],
+      multiSelect: false
+    });
+    return index + 1;
+  }
+
+  const mappedType = definitionTypeToEditorType(type);
+  if (!mappedType) {
+    throw new Error(`${name}: 未対応のDefinition type '${definition.type}' です。`);
+  }
+
+  result.push({
+    index,
+    name,
+    memberPath: memberText,
+    jsonPath,
+    type: mappedType,
+    required:
+      mappedType !== "String" ||
+      Boolean(definition.source || inheritedSource),
+    source: definition.source || inheritedSource || "",
+    defaultValue: "",
+    min: "",
+    max: "",
+    options: Array.isArray(definition.options)
+      ? definition.options.map(String)
+      : [],
+    multiSelect: Boolean(definition.multiSelect)
+  });
+
+  return index + 1;
+}
+
+function definitionTypeToEditorType(type) {
+  switch (type) {
+    case "string": return "String";
+    case "int": return "Int";
+    case "float": return "Float";
+    case "bool": return "Bool";
+    case "enum": return "Enum";
+    default: return null;
+  }
+}
+
+const MAX_COMMAND_NESTING = 12;
+
+function getArgDisplayName(arg) {
+  return arg.memberPath
+    ? `${arg.name}.${arg.memberPath}`
+    : arg.name;
+}
+
+function getAssignableCommands() {
+  return [...state.definitionOrder];
+}
+
+function getEffectiveArgDefinitions(row) {
+  const result = [];
+  let cursor = 1;
+
+  function append(commandName, path, depth) {
+    if (depth > MAX_COMMAND_NESTING) return;
+
+    const def = state.definitions.get(commandName);
+    if (!def) return;
+
+    for (const baseArg of def.args) {
+      const key = `${path}${commandName}#${baseArg.index}`;
+      const effective = {
+        ...baseArg,
+        index: cursor++,
+        key
+      };
+      result.push(effective);
+
+      if (baseArg.type === "Command") {
+        const nestedCommand = String(
+          row.args[effective.index - 1] ?? ""
+        ).trim();
+
+        if (nestedCommand && state.definitions.has(nestedCommand)) {
+          append(nestedCommand, `${key}>`, depth + 1);
+        }
+      }
+    }
+  }
+
+  append(row.command, "root>", 0);
+  return result;
+}
+
+function rebuildDynamicArguments(row, changedArg, newValue) {
+  const oldDefs = getEffectiveArgDefinitions(row);
+  const valuesByKey = new Map();
+
+  for (const arg of oldDefs) {
+    valuesByKey.set(
+      arg.key,
+      String(row.args[arg.index - 1] ?? arg.defaultValue ?? "")
+    );
+  }
+
+  valuesByKey.set(changedArg.key, newValue);
+
+  const newArgs = [];
+  let cursor = 1;
+
+  function append(commandName, path, depth) {
+    if (depth > MAX_COMMAND_NESTING) return;
+
+    const def = state.definitions.get(commandName);
+    if (!def) return;
+
+    for (const baseArg of def.args) {
+      const key = `${path}${commandName}#${baseArg.index}`;
+      const value = valuesByKey.has(key)
+        ? valuesByKey.get(key)
+        : String(baseArg.defaultValue ?? "");
+
+      newArgs[cursor - 1] = value;
+      cursor++;
+
+      if (baseArg.type === "Command") {
+        const nestedCommand = String(value ?? "").trim();
+        if (nestedCommand && state.definitions.has(nestedCommand)) {
+          append(nestedCommand, `${key}>`, depth + 1);
+        }
+      }
+    }
+  }
+
+  append(row.command, "root>", 0);
+  row.args = newArgs;
+}
+
+function createDefaultArgs(commandName) {
+  const def = state.definitions.get(commandName);
+  if (!def) return [];
+
+  const maxIndex = def.args.reduce((m,a) => Math.max(m,a.index), 0);
+  const args = Array(maxIndex).fill("");
+
+  for (const arg of def.args) {
+    args[arg.index - 1] = arg.defaultValue ?? "";
+  }
+
+  return args;
+}
+
+function loadRepository(sourceName, text, fileName) {
+  const rows = parseCsv(text);
+  if (!rows.length) throw new Error("Repository CSVが空です。");
+
+  const headers = rows[0].map(h => h.trim());
+  let idIndex = headers.findIndex(h => ["id","Id","ID"].includes(h));
+  if (idIndex < 0) idIndex = 0;
+
+  const ids = rows.slice(1)
+    .map(r => (r[idIndex] ?? "").trim())
+    .filter(Boolean);
+
+  const duplicates = ids.filter((v, i) => ids.indexOf(v) !== i);
+  if (duplicates.length) {
+    throw new Error(`${sourceName}: IDが重複しています: ${[...new Set(duplicates)].join(", ")}`);
+  }
+
+  state.repositories.set(sourceName, {
+    ids,
+    fileName,
+    loaded: true,
+    headers,
+    dataRows: rows.slice(1).map(r => [...r]),
+    idIndex
+  });
+
+  renderAll();
+}
+
+function importScenario(text) {
+  if (!state.definitions.size) {
+    throw new Error("先にCommand Definition JSONを読み込んでください。");
+  }
+
+  let timeline;
+  try {
+    timeline = JSON.parse(text);
+  } catch {
+    throw new Error("Timeline JSONの形式が不正です。");
+  }
+
+  if (!Array.isArray(timeline)) {
+    throw new Error("Timeline JSONのルートは配列である必要があります。");
+  }
+
+  state.rows = timeline.map((eventData, index) => {
+    if (!eventData || typeof eventData !== "object") {
+      throw new Error(`Event ${index + 1}: objectではありません。`);
+    }
+
+    const execution = eventData.execution;
+    if (!execution || typeof execution !== "object") {
+      throw new Error(`Event ${index + 1}: executionがありません。`);
+    }
+
+    const command = String(execution.command ?? "").trim();
+    if (!state.definitions.has(command)) {
+      throw new Error(
+        `Event ${index + 1}: 未定義のCommand '${command || "(empty)"}' です。`
+      );
+    }
+
+    const args = [];
+    appendExecutionValues(execution, args, 0);
+
+    return {
+      time: String(eventData.time ?? ""),
+      command,
+      args
+    };
+  });
+
+  state.selectedIndex = state.rows.length ? 0 : -1;
+  renderAll();
+}
+
+function appendExecutionValues(execution, values, depth) {
+  if (depth > MAX_COMMAND_NESTING) {
+    throw new Error("Executionのネストが深すぎます。");
+  }
+
+  const commandName = String(execution?.command ?? "").trim();
+  const def = state.definitions.get(commandName);
+  if (!def) {
+    throw new Error(`未定義のCommand '${commandName || "(empty)"}' です。`);
+  }
+
+  const argumentsObject =
+    execution.arguments &&
+    typeof execution.arguments === "object" &&
+    !Array.isArray(execution.arguments)
+      ? execution.arguments
+      : {};
+
+  for (const arg of def.args) {
+    const value = getJsonPathValue(
+      argumentsObject,
+      arg.jsonPath
+    );
+
+    if (arg.type === "Command") {
+      const nested = value;
+      const nestedCommand = String(nested?.command ?? "").trim();
+      values.push(nestedCommand);
+
+      if (nestedCommand) {
+        appendExecutionValues(nested, values, depth + 1);
+      }
+      continue;
+    }
+
+    values.push(jsonValueToEditorText(arg, value));
+  }
+}
+
+function getJsonPathValue(root, path) {
+  let current = root;
+
+  for (const segment of path ?? []) {
+    if (!current ||
+        typeof current !== "object" ||
+        !Object.prototype.hasOwnProperty.call(current, segment)) {
+      return undefined;
+    }
+    current = current[segment];
+  }
+
+  return current;
+}
+
+function jsonValueToEditorText(arg, value) {
+  if (value === undefined || value === null) return "";
+
+  if (arg.type === "Bool") {
+    return value === true
+      ? "true"
+      : value === false
+        ? "false"
+        : String(value);
+  }
+
+  if (arg.type === "Enum" && arg.multiSelect) {
+    return String(value)
+      .split(",")
+      .map(v => v.trim())
+      .filter(Boolean)
+      .join("|");
+  }
+
+  return String(value);
+}
+
+function validateArgumentValue(arg, raw) {
+  const errors = [];
+
+  if (arg.required && raw === "") {
+    errors.push(`${arg.name} は必須です。`);
+    return errors;
+  }
+  if (raw === "") return errors;
+
+  if (arg.type === "Float") {
+    const n = Number(raw);
+    if (!Number.isFinite(n)) {
+      errors.push(`${arg.name} は数値で指定してください。`);
+      return errors;
+    }
+    if (arg.min !== "" && n < Number(arg.min)) {
+      errors.push(`${arg.name} は ${arg.min} 以上にしてください。`);
+    }
+    if (arg.max !== "" && n > Number(arg.max)) {
+      errors.push(`${arg.name} は ${arg.max} 以下にしてください。`);
+    }
+  }
+
+  if (arg.type === "Int") {
+    const n = Number(raw);
+    if (!Number.isInteger(n)) {
+      errors.push(`${arg.name} は整数で指定してください。`);
+      return errors;
+    }
+    if (arg.min !== "" && n < Number(arg.min)) {
+      errors.push(`${arg.name} は ${arg.min} 以上にしてください。`);
+    }
+    if (arg.max !== "" && n > Number(arg.max)) {
+      errors.push(`${arg.name} は ${arg.max} 以下にしてください。`);
+    }
+  }
+
+  if (arg.type === "Bool" && toBoolText(raw) === "") {
+    errors.push(`${arg.name} は true / false で指定してください。`);
+  }
+
+  if (arg.type === "Enum" && arg.options.length) {
+    const values = arg.multiSelect
+      ? raw.split("|").map(v => v.trim()).filter(Boolean)
+      : [raw];
+
+    const invalidValues = values.filter(v => !arg.options.includes(v));
+    if (invalidValues.length) {
+      errors.push(`${getArgDisplayName(arg)} に未定義の値 '${invalidValues.join("|")}' が指定されています。`);
+    }
+
+    if (arg.multiSelect && new Set(values).size !== values.length) {
+      errors.push(`${getArgDisplayName(arg)} に同じ値が複数回指定されています。`);
+    }
+  }
+
+  if (arg.type === "Command" && !state.definitions.has(raw)) {
+    errors.push(`${getArgDisplayName(arg)}: 未定義のCommand '${raw}' です。`);
+  }
+
+  if (arg.source) {
+    const repo = state.repositories.get(arg.source);
+    if (!repo || !repo.loaded) {
+      errors.push(`Repository '${arg.source}' が読み込まれていません。`);
+    } else if (!repo.ids.includes(raw)) {
+      errors.push(`${arg.name}: '${raw}' は ${arg.source} に存在しません。`);
+    }
+  }
+
+  return errors;
+}
+
+function validateRow(row) {
+  const errors = [];
+
+  const time = Number(row.time);
+  if (String(row.time).trim() === "" ||
+      !Number.isFinite(time) ||
+      time < 0) {
+    errors.push("Time は0以上の数値で指定してください。");
+  }
+
+  const def = state.definitions.get(row.command);
+  if (!def) {
+    errors.push(`未定義のCommandです: ${row.command || "(empty)"}`);
+    return errors;
+  }
+
+  const effectiveArgs = getEffectiveArgDefinitions(row);
+  for (const arg of effectiveArgs) {
+    const raw = String(row.args[arg.index - 1] ?? "").trim();
+    errors.push(...validateArgumentValue(arg, raw));
+  }
+
+  return errors;
+}
+
+function validateAll(showDialog = false) {
+  const all = state.rows.map((row, index) => ({
+    index,
+    errors: validateRow(row)
+  }));
+
+  const invalid = all.filter(x => x.errors.length);
+  renderAll();
+
+  if (showDialog) {
+    if (!invalid.length) {
+      alert("Validation OK: エラーはありません。");
+    } else {
+      const message = invalid
+        .map(x => `Row ${x.index + 1}\n- ${x.errors.join("\n- ")}`)
+        .join("\n\n");
+      alert(`Validation failed\n\n${message}`);
+    }
+  }
+
+  return invalid;
+}
+
+function renderAll() {
+  renderEditorTabs();
+  renderTable();
+  renderActiveRepository();
+  renderCommandDefinitions();
+  updateEditorVisibility();
+  updateScenarioToolbarState();
+
+  const invalidCount = state.rows.filter(r => validateRow(r).length > 0).length;
+  $("globalStatus").textContent = state.definitions.size
+    ? `${state.definitions.size} commands / ${invalidCount} invalid rows`
+    : "Command定義未読込";
+}
+
+function getScenarioMaxArgCount() {
+  let maxArgs = 1;
+
+  for (const def of state.definitions.values()) {
+    for (const arg of def.args) {
+      maxArgs = Math.max(maxArgs, arg.index);
+    }
+  }
+
+  for (const row of state.rows) {
+    maxArgs = Math.max(
+      maxArgs,
+      row.args.length,
+      getEffectiveArgDefinitions(row).length
+    );
+  }
+
+  return maxArgs;
+}
+
+function renderScenarioHead(maxArgs) {
+  const head = $("scenarioHead");
+  head.innerHTML = "";
+
+  const tr = document.createElement("tr");
+
+  appendScenarioHeaderCell(
+    tr,
+    "#",
+    "grid-col-no"
+  );
+
+  appendSortableScenarioHeader(
+    tr,
+    "Time",
+    "grid-col-time",
+    "time",
+    state.timeSortDirection
+  );
+
+  appendSortableScenarioHeader(
+    tr,
+    "Command",
+    "grid-col-command",
+    "command",
+    state.commandSortDirection
+  );
+
+  for (let i = 1; i <= maxArgs; i++) {
+    appendScenarioHeaderCell(
+      tr,
+      `Arg${i}`,
+      "grid-col-arg"
+    );
+  }
+
+  appendScenarioHeaderCell(
+    tr,
+    "Status",
+    "grid-col-status"
+  );
+
+  head.appendChild(tr);
+}
+
+function appendScenarioHeaderCell(
+  row,
+  text,
+  className
+) {
+  const th = document.createElement("th");
+  th.className = className;
+  th.textContent = text;
+  row.appendChild(th);
+}
+
+function appendSortableScenarioHeader(
+  row,
+  label,
+  className,
+  sortKey,
+  direction
+) {
+  const th = document.createElement("th");
+  th.className =
+    `${className} sortable-header`;
+
+  th.classList.toggle(
+    "active-sort",
+    Boolean(direction)
+  );
+
+  th.title =
+    direction === "asc"
+      ? `${label}: 昇順`
+      : direction === "desc"
+        ? `${label}: 降順`
+        : `${label}: クリックして並べ替え`;
+
+  th.setAttribute(
+    "aria-sort",
+    direction === "asc"
+      ? "ascending"
+      : direction === "desc"
+        ? "descending"
+        : "none"
+  );
+
+  const content =
+    document.createElement("span");
+  content.className =
+    "sortable-header-content";
+
+  const name =
+    document.createElement("span");
+  name.className =
+    "sortable-header-label";
+  name.textContent = label;
+
+  const indicator =
+    document.createElement("span");
+  indicator.className =
+    "sortable-header-indicator";
+
+  indicator.textContent =
+    direction === "asc"
+      ? "↑"
+      : direction === "desc"
+        ? "↓"
+        : "↕";
+
+  content.append(name, indicator);
+  th.appendChild(content);
+
+  th.addEventListener(
+    "click",
+    () => sortScenario(sortKey)
+  );
+
+  row.appendChild(th);
+}
+function renderTable() {
+  const body = $("scenarioBody");
+  body.innerHTML = "";
+
+  const maxArgs = getScenarioMaxArgCount();
+  renderScenarioHead(maxArgs);
+
+  $("tableEmpty").style.display = state.rows.length ? "none" : "block";
+
+  state.rows.forEach((row, rowIndex) => {
+    const tr = document.createElement("tr");
+    if (rowIndex === state.selectedIndex) {
+      tr.classList.add("grid-row-selected");
+    }
+
+    tr.addEventListener("click", e => {
+      if (e.target.matches("input, select, option, button")) return;
+      state.selectedIndex = rowIndex;
+      renderTableSelectionOnly();
+    });
+
+    // #
+    const noTd = document.createElement("td");
+    noTd.className = "grid-col-no";
+    const noCell = document.createElement("div");
+    noCell.className = "grid-simple-cell";
+    noCell.textContent = String(rowIndex + 1);
+    noTd.appendChild(noCell);
+    tr.appendChild(noTd);
+
+    // Time
+    const timeTd = document.createElement("td");
+    timeTd.className = "grid-col-time";
+    timeTd.appendChild(createTimeGridCell(row, rowIndex));
+    tr.appendChild(timeTd);
+
+    // Command
+    const commandTd = document.createElement("td");
+    commandTd.className = "grid-col-command";
+    commandTd.appendChild(createCommandGridCell(row, rowIndex));
+    tr.appendChild(commandTd);
+
+    // Arg1..ArgN
+    const effectiveArgs = getEffectiveArgDefinitions(row);
+    const argByIndex = new Map(
+      effectiveArgs.map(arg => [arg.index, arg])
+    );
+
+    for (let argIndex = 1; argIndex <= maxArgs; argIndex++) {
+      const argTd = document.createElement("td");
+      argTd.className = "grid-col-arg";
+
+      const arg = argByIndex.get(argIndex);
+      if (arg) {
+        argTd.appendChild(
+          createArgumentGridCell(row, rowIndex, arg)
+        );
+      } else {
+        const empty = document.createElement("div");
+        empty.className = "grid-empty";
+        argTd.appendChild(empty);
+      }
+
+      tr.appendChild(argTd);
+    }
+
+    // Status
+    const statusTd = document.createElement("td");
+    statusTd.className = "grid-col-status";
+    statusTd.appendChild(
+      createStatusGridCell(validateRow(row))
+    );
+    tr.appendChild(statusTd);
+
+    body.appendChild(tr);
+  });
+}
+
+function renderTableSelectionOnly() {
+  const rows = $("scenarioBody")?.querySelectorAll("tr") ?? [];
+  rows.forEach((tr, i) => {
+    tr.classList.toggle(
+      "grid-row-selected",
+      i === state.selectedIndex
+    );
+  });
+}
+
+function createTimeGridCell(row, rowIndex) {
+  const cell = document.createElement("div");
+  cell.className = "grid-cell grid-edit-cell";
+
+  const label = document.createElement("div");
+  label.className = "grid-cell-label";
+  label.textContent = "";
+
+  const input = document.createElement("input");
+  input.type = "number";
+  input.min = "0";
+  input.step = "any";
+  input.className = "grid-control";
+  input.value = row.time;
+
+  const invalid =
+    String(row.time).trim() === "" ||
+    !Number.isFinite(Number(row.time)) ||
+    Number(row.time) < 0;
+
+  cell.classList.toggle("invalid", invalid);
+
+  input.addEventListener("focus", () => {
+    state.selectedIndex = rowIndex;
+    renderTableSelectionOnly();
+  });
+
+  input.addEventListener("input", () => {
+    row.time = input.value;
+    const invalidNow =
+      String(row.time).trim() === "" ||
+      !Number.isFinite(Number(row.time)) ||
+      Number(row.time) < 0;
+    cell.classList.toggle("invalid", invalidNow);
+    refreshRowStatus(input.closest("tr"), row);
+  });
+
+  cell.append(label, input);
+  return cell;
+}
+
+function createCommandGridCell(row, rowIndex) {
+  const cell = document.createElement("div");
+  cell.className = "grid-cell grid-edit-cell";
+
+  const label = document.createElement("div");
+  label.className = "grid-cell-label";
+  label.textContent = "";
+
+  const select = document.createElement("select");
+  select.className = "grid-control";
+  select.appendChild(new Option("-- select --", ""));
+
+  for (const name of state.definitionOrder) {
+    select.appendChild(new Option(name, name));
+  }
+
+  select.value = row.command;
+
+  const invalid = !state.definitions.has(row.command);
+  cell.classList.toggle("invalid", invalid);
+
+  select.addEventListener("focus", () => {
+    state.selectedIndex = rowIndex;
+    renderTableSelectionOnly();
+  });
+
+  select.addEventListener("change", () => {
+    row.command = select.value;
+    row.args = createDefaultArgs(row.command);
+    state.selectedIndex = rowIndex;
+    renderAll();
+  });
+
+  cell.append(label, select);
+  return cell;
+}
+
+function createMultiSelectGridControl(arg, current) {
+  const details = document.createElement("details");
+  details.className = "grid-multiselect";
+
+  const summary = document.createElement("summary");
+  summary.className = "grid-control";
+  details.appendChild(summary);
+
+  const panel = document.createElement("div");
+  panel.className = "grid-multiselect-panel";
+  details.appendChild(panel);
+
+  const selected = new Set(
+    String(current || "")
+      .split("|")
+      .map(v => v.trim())
+      .filter(Boolean)
+  );
+
+  const checkboxes = [];
+  for (const option of arg.options) {
+    const label = document.createElement("label");
+    label.className = "grid-multiselect-option";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = option;
+    checkbox.checked = selected.has(option);
+    checkboxes.push(checkbox);
+
+    const text = document.createElement("span");
+    text.textContent = option;
+    label.append(checkbox, text);
+    panel.appendChild(label);
+  }
+
+  const readValue = () => checkboxes
+    .filter(c => c.checked)
+    .map(c => c.value)
+    .join("|");
+
+  const updateSummary = () => {
+    const values = checkboxes
+      .filter(c => c.checked)
+      .map(c => c.value);
+
+    if (values.length === 0) {
+      summary.textContent = "-- select --";
+    } else if (values.length === 1) {
+      summary.textContent = values[0];
+    } else {
+      summary.textContent = `${values[0]} +${values.length - 1}`;
+    }
+
+    summary.title = values.join(", ");
+  };
+
+  Object.defineProperty(details, "value", {
+    configurable: true,
+    get: readValue
+  });
+
+  for (const checkbox of checkboxes) {
+    checkbox.addEventListener("change", () => {
+      updateSummary();
+      details.dispatchEvent(new Event("change", { bubbles: false }));
+    });
+  }
+
+  updateSummary();
+  return details;
+}
+
+function createArgumentGridCell(row, rowIndex, arg) {
+  const cell = document.createElement("div");
+  cell.className = "grid-cell grid-edit-cell";
+
+  const label = document.createElement("div");
+  label.className = "grid-cell-label";
+  label.textContent = getArgDisplayName(arg);
+  label.title = getArgDisplayName(arg);
+
+  const current = String(row.args[arg.index - 1] ?? "");
+  let control;
+
+  if (arg.type === "Command") {
+    control = document.createElement("select");
+    control.appendChild(new Option("-- select --", ""));
+    for (const commandName of getAssignableCommands()) {
+      control.appendChild(new Option(commandName, commandName));
+    }
+    control.value = current;
+  } else if (arg.source) {
+    control = document.createElement("select");
+    control.appendChild(new Option("-- select --", ""));
+
+    const repo = state.repositories.get(arg.source);
+    if (repo?.loaded) {
+      for (const id of repo.ids) {
+        control.appendChild(new Option(id, id));
+      }
+    } else {
+      control.appendChild(
+        new Option(`Repository '${arg.source}' 未読込`, "")
+      );
+      control.disabled = true;
+    }
+    control.value = current;
+  } else if (arg.type === "Bool") {
+    control = document.createElement("select");
+    control.appendChild(new Option("-- select --", ""));
+    control.appendChild(new Option("true", "true"));
+    control.appendChild(new Option("false", "false"));
+    control.value = toBoolText(current);
+  } else if (arg.type === "Enum" && arg.options.length && arg.multiSelect) {
+    control = createMultiSelectGridControl(arg, current);
+  } else if (arg.type === "Enum" && arg.options.length) {
+    control = document.createElement("select");
+    control.appendChild(new Option("-- select --", ""));
+    for (const option of arg.options) {
+      control.appendChild(new Option(option, option));
+    }
+    control.value = current;
+  } else {
+    control = document.createElement("input");
+    control.type = ["Float", "Int"].includes(arg.type)
+      ? "number"
+      : "text";
+
+    if (arg.type === "Int") control.step = "1";
+    if (arg.type === "Float") control.step = "any";
+    if (arg.min !== "") control.min = arg.min;
+    if (arg.max !== "") control.max = arg.max;
+    control.value = current;
+  }
+
+  if (!control.classList.contains("grid-multiselect")) {
+    control.className = "grid-control";
+  }
+  control.title = current;
+
+  const errors = validateArgumentValue(
+    arg,
+    current.trim()
+  );
+  cell.classList.toggle("invalid", errors.length > 0);
+
+  control.addEventListener(
+    control.classList.contains("grid-multiselect") ? "focusin" : "focus",
+    () => {
+      state.selectedIndex = rowIndex;
+      renderTableSelectionOnly();
+    }
+  );
+
+  const commit = () => {
+    row.args[arg.index - 1] = control.value;
+    control.title = control.value;
+
+    if (arg.type === "Command") {
+      rebuildDynamicArguments(row, arg, control.value);
+      state.selectedIndex = rowIndex;
+      renderAll();
+      return;
+    }
+
+    const nextErrors = validateArgumentValue(
+      arg,
+      String(control.value).trim()
+    );
+    cell.classList.toggle("invalid", nextErrors.length > 0);
+
+    refreshRowStatus(control.closest("tr"), row);
+  };
+
+  control.addEventListener("change", commit);
+
+  if (control.tagName === "INPUT") {
+    control.addEventListener("input", commit);
+  }
+
+  cell.append(label, control);
+  return cell;
+}
+
+function createStatusGridCell(errors) {
+  const wrap = document.createElement("div");
+  wrap.className = "grid-simple-cell";
+
+  const status = document.createElement("span");
+  status.className =
+    "row-status " + (errors.length ? "error" : "ok");
+  status.textContent =
+    errors.length ? `Error ${errors.length}` : "OK";
+
+  if (errors.length) {
+    status.title = errors.join("\n");
+  }
+
+  wrap.appendChild(status);
+  return wrap;
+}
+
+function refreshRowStatus(tr, row) {
+  if (!tr) return;
+
+  const errors = validateRow(row);
+  const statusTd = tr.querySelector("td.grid-col-status");
+  if (statusTd) {
+    statusTd.innerHTML = "";
+    statusTd.appendChild(createStatusGridCell(errors));
+  }
+
+  const invalidCount =
+    state.rows.filter(r => validateRow(r).length > 0).length;
+
+  $("globalStatus").textContent = state.definitions.size
+    ? `${state.definitions.size} commands / ${invalidCount} invalid rows`
+    : "Command定義未読込";
+}
+
+function getRepositoryReferenceRows(sourceName, id) {
+  const referencedRows = new Set();
+
+  state.rows.forEach((row, rowIndex) => {
+    const def = state.definitions.get(row.command);
+    if (!def) return;
+
+    for (const arg of getEffectiveArgDefinitions(row)) {
+      if (arg.source !== sourceName) continue;
+
+      const value = String(row.args[arg.index - 1] ?? "").trim();
+      if (value === id) {
+        referencedRows.add(rowIndex);
+      }
+    }
+  });
+
+  return [...referencedRows];
+}
+
+function clearRepositoryReferences(sourceName, id) {
+  state.rows.forEach(row => {
+    const def = state.definitions.get(row.command);
+    if (!def) return;
+
+    for (const arg of getEffectiveArgDefinitions(row)) {
+      if (arg.source !== sourceName) continue;
+
+      const value = String(row.args[arg.index - 1] ?? "").trim();
+      if (value === id) {
+        row.args[arg.index - 1] = "";
+      }
+    }
+  });
+}
+
+function replaceRepositoryReferences(sourceName, oldId, newId) {
+  state.rows.forEach(row => {
+    const def = state.definitions.get(row.command);
+    if (!def) return;
+
+    for (const arg of getEffectiveArgDefinitions(row)) {
+      if (arg.source !== sourceName) continue;
+
+      const value = String(row.args[arg.index - 1] ?? "").trim();
+      if (value === oldId) {
+        row.args[arg.index - 1] = newId;
+      }
+    }
+  });
+}
+
+function validateRepositoryId(repo, id, ignoreId = null) {
+  const value = String(id ?? "").trim();
+
+  if (!value) {
+    return "IDを入力してください。";
+  }
+
+  if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(value)) {
+    return "IDは英字で始まり、英数字・_・- のみ使用できます。";
+  }
+
+  const duplicate = repo.ids.some(existing =>
+    existing !== ignoreId && existing === value
+  );
+
+  if (duplicate) {
+    return `ID "${value}" は既に存在します。`;
+  }
+
+  return null;
+}
+
+function getRepositoryPathIndex(repo) {
+  if (!repo?.headers?.length) return -1;
+
+  const pathIndex = repo.headers.findIndex(
+    h => String(h).trim().toLowerCase() === "path"
+  );
+
+  return pathIndex;
+}
+
+function getRepositoryPath(repo, id) {
+  const pathIndex = getRepositoryPathIndex(repo);
+  if (pathIndex < 0) return "";
+
+  const row = repo.dataRows.find(r =>
+    String(r[repo.idIndex] ?? "").trim() === id
+  );
+
+  return row ? String(row[pathIndex] ?? "") : "";
+}
+
+function addRepositoryId(sourceName) {
+  const repo = state.repositories.get(sourceName);
+  if (!repo?.loaded) return;
+
+  const newRow = Array(repo.headers.length).fill("");
+  repo.dataRows.push(newRow);
+
+  renderAll();
+}
+function renameRepositoryId(sourceName, oldId) {
+  const repo = state.repositories.get(sourceName);
+  if (!repo?.loaded) return;
+
+  const newId = prompt(
+    `"${oldId}" の新しいIDを入力してください。`,
+    oldId
+  );
+  if (newId === null) return;
+
+  const normalizedNewId = newId.trim();
+  if (normalizedNewId === oldId) return;
+
+  const error = validateRepositoryId(repo, normalizedNewId, oldId);
+  if (error) {
+    alert(error);
+    return;
+  }
+
+  const referencedRows = getRepositoryReferenceRows(sourceName, oldId);
+
+  const message = referencedRows.length > 0
+    ? `"${oldId}" は Scenario の ${referencedRows.length} 行で使用されています。\n\nリネームすると、すべての参照を "${normalizedNewId}" に自動更新します。\n\nリネームしますか？`
+    : `"${oldId}" を "${normalizedNewId}" にリネームしますか？`;
+
+  if (!confirm(message)) return;
+
+  repo.ids = repo.ids.map(id =>
+    id === oldId ? normalizedNewId : id
+  );
+
+  for (const row of repo.dataRows) {
+    if (String(row[repo.idIndex] ?? "").trim() === oldId) {
+      row[repo.idIndex] = normalizedNewId;
+    }
+  }
+
+  replaceRepositoryReferences(
+    sourceName,
+    oldId,
+    normalizedNewId
+  );
+
+  renderAll();
+}
+
+function changeRepositoryPath(sourceName, id) {
+  const repo = state.repositories.get(sourceName);
+  if (!repo?.loaded) return;
+
+  const pathIndex = getRepositoryPathIndex(repo);
+  if (pathIndex < 0) {
+    alert(`Repository "${sourceName}" に Path 列がありません。`);
+    return;
+  }
+
+  const currentPath = getRepositoryPath(repo, id);
+
+  const newPath = prompt(
+    `"${id}" のPathを変更してください。`,
+    currentPath
+  );
+  if (newPath === null) return;
+
+  const normalizedPath = newPath.trim();
+  if (!normalizedPath) {
+    alert("Pathを空欄にはできません。");
+    return;
+  }
+
+  const row = repo.dataRows.find(r =>
+    String(r[repo.idIndex] ?? "").trim() === id
+  );
+
+  if (!row) {
+    alert(`ID "${id}" のRepository行が見つかりません。`);
+    return;
+  }
+
+  row[pathIndex] = normalizedPath;
+  renderAll();
+}
+
+function deleteRepositoryId(sourceName, id) {
+  const repo = state.repositories.get(sourceName);
+  if (!repo?.loaded) return;
+
+  const referencedRows = getRepositoryReferenceRows(sourceName, id);
+  const count = referencedRows.length;
+
+  const message = count > 0
+    ? `"${id}" は Scenario の ${count} 行で使用されています。\n\n削除すると、そのIDが使われているすべての箇所を自動的に空欄にします。\n\n削除しますか？`
+    : `"${id}" は Scenario では使用されていません。\n\n削除しますか？`;
+
+  if (!confirm(message)) return;
+
+  clearRepositoryReferences(sourceName, id);
+
+  repo.ids = repo.ids.filter(x => x !== id);
+  repo.dataRows = repo.dataRows.filter(r =>
+    String(r[repo.idIndex] ?? "").trim() !== id
+  );
+
+  renderAll();
+}
+
+function exportRepository(sourceName) {
+  const repo = state.repositories.get(sourceName);
+  if (!repo?.loaded) return;
+
+  const lines = [
+    repo.headers.map(csvEscape).join(","),
+    ...repo.dataRows.map(row =>
+      repo.headers.map((_, i) => csvEscape(row[i] ?? "")).join(",")
+    )
+  ];
+
+  const blob = new Blob(
+    ["\uFEFF" + lines.join("\r\n")],
+    { type: "text/csv;charset=utf-8" }
+  );
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = repo.fileName || `${sourceName}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+
+function repositoryDisplayName(sourceName) {
+  return sourceName.endsWith("Repository")
+    ? sourceName.slice(0, -"Repository".length)
+    : sourceName;
+}
+
+function renderEditorTabs() {
+  const tabs = $("editorTabs");
+  if (!tabs) return;
+  tabs.innerHTML = "";
+
+  const addTab = (
+    key,
+    label,
+    className = ""
+  ) => {
+    const button =
+      document.createElement("button");
+
+    button.className =
+      "editor-tab" +
+      (className ? ` ${className}` : "") +
+      (state.activeEditor === key ? " active" : "");
+
+    button.textContent = label;
+
+    button.addEventListener("click", () => {
+      state.activeEditor = key;
+      renderAll();
+    });
+
+    tabs.appendChild(button);
+  };
+
+  addTab("scenario", "Scenario");
+
+  const repositorySources =
+    [...state.repositories.keys()].sort();
+
+  repositorySources.forEach((source, index) => {
+    addTab(
+      source,
+      repositoryDisplayName(source),
+      index === 0
+        ? "repository-tab first-repository-tab"
+        : "repository-tab"
+    );
+  });
+
+  const spacer = document.createElement("div");
+  spacer.className = "editor-tab-spacer";
+  tabs.appendChild(spacer);
+
+  addTab(
+    "commandDefinitions",
+    "Command Definitions",
+    "reference-tab"
+  );
+}
+function updateEditorVisibility() {
+  const scenarioMode =
+    state.activeEditor === "scenario";
+
+  const definitionMode =
+    state.activeEditor === "commandDefinitions";
+
+  const repositoryMode =
+    !scenarioMode && !definitionMode;
+
+  $("scenarioToolbar").classList.toggle(
+    "hidden",
+    !scenarioMode
+  );
+
+  $("repositoryToolbar").classList.toggle(
+    "hidden",
+    !repositoryMode
+  );
+
+  $("scenarioContent").classList.toggle(
+    "hidden",
+    !scenarioMode
+  );
+
+  $("repositoryContent").classList.toggle(
+    "hidden",
+    !repositoryMode
+  );
+
+  $("commandDefinitionContent").classList.toggle(
+    "hidden",
+    !definitionMode
+  );
+
+  updateRepositoryToolbar();
+
+  const workspace = document.querySelector(".workspace");
+  if (workspace) {
+    workspace.style.gridTemplateColumns = "1fr";
+  }
+
+  const status = $("editorHeaderStatus");
+  if (!status) return;
+
+  if (scenarioMode) {
+    status.textContent =
+      `${state.rows.length} rows`;
+    return;
+  }
+
+  if (definitionMode) {
+    status.textContent =
+      `${state.definitions.size} commands`;
+    return;
+  }
+
+  const repo =
+    state.repositories.get(state.activeEditor);
+
+  status.textContent =
+    repo?.loaded
+      ? `${repo.ids.length} IDs`
+      : "未読込";
+}
+
+function updateRepositoryToolbar() {
+  const reloadButton = $("repositoryReloadBtn");
+  const saveButton = $("repositorySaveBtn");
+  const addButton = $("repositoryAddIdBtn");
+
+  if (!reloadButton || !saveButton || !addButton)
+    return;
+
+  if (state.activeEditor === "scenario" ||
+      state.activeEditor === "commandDefinitions") {
+    return;
+  }
+
+  const repo = state.repositories.get(state.activeEditor);
+  const loaded = Boolean(repo?.loaded);
+
+  reloadButton.textContent =
+    loaded ? "再読み込み" : "読み込み";
+
+  saveButton.disabled = !loaded;
+  addButton.disabled = !loaded;
+}
+
+function syncRepositoryIds(repo) {
+  repo.ids = repo.dataRows
+    .map(row => String(row[repo.idIndex] ?? "").trim())
+    .filter(Boolean);
+}
+
+function commitRepositoryId(
+  sourceName,
+  repo,
+  dataRow,
+  oldId,
+  input,
+  cell
+) {
+  const newId = input.value.trim();
+  const error = validateRepositoryId(repo, newId, oldId || null);
+
+  cell.classList.toggle("invalid", Boolean(error));
+  input.title = error || newId;
+
+  if (error) return;
+
+  if (newId === oldId) return;
+
+  const referencedRows = oldId
+    ? getRepositoryReferenceRows(sourceName, oldId)
+    : [];
+
+  if (oldId && referencedRows.length > 0) {
+    const accepted = confirm(
+      `"${oldId}" は Scenario の ${referencedRows.length} 行で使用されています。\n\n` +
+      `IDを "${newId}" に変更すると、すべての参照も自動更新します。\n\n変更しますか？`
+    );
+
+    if (!accepted) {
+      input.value = oldId;
+      cell.classList.remove("invalid");
+      input.title = oldId;
+      return;
+    }
+  }
+
+  dataRow[repo.idIndex] = newId;
+  syncRepositoryIds(repo);
+
+  if (oldId) {
+    replaceRepositoryReferences(
+      sourceName,
+      oldId,
+      newId
+    );
+  }
+
+  renderAll();
+}
+
+function createRepositoryIdCell(
+  sourceName,
+  repo,
+  dataRow
+) {
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className =
+    "repo-definition-input repo-id-input";
+
+  const oldId =
+    String(dataRow[repo.idIndex] ?? "").trim();
+
+  input.value = oldId;
+  input.title = oldId;
+
+  if (!oldId) {
+    input.classList.add("invalid");
+    input.title = "IDを入力してください。";
+  }
+
+  input.addEventListener("change", () => {
+    const newId = input.value.trim();
+    const error =
+      validateRepositoryId(
+        repo,
+        newId,
+        oldId || null
+      );
+
+    input.classList.toggle(
+      "invalid",
+      Boolean(error)
+    );
+    input.title = error || newId;
+
+    if (error) return;
+
+    if (newId === oldId) return;
+
+    const referencedRows = oldId
+      ? getRepositoryReferenceRows(
+          sourceName,
+          oldId
+        )
+      : [];
+
+    if (oldId && referencedRows.length > 0) {
+      const accepted = confirm(
+        `"${oldId}" は Scenario の ${referencedRows.length} 行で使用されています。\n\n` +
+        `IDを "${newId}" に変更すると、すべての参照も自動更新します。\n\n変更しますか？`
+      );
+
+      if (!accepted) {
+        input.value = oldId;
+        input.classList.remove("invalid");
+        input.title = oldId;
+        return;
+      }
+    }
+
+    dataRow[repo.idIndex] = newId;
+    syncRepositoryIds(repo);
+
+    if (oldId) {
+      replaceRepositoryReferences(
+        sourceName,
+        oldId,
+        newId
+      );
+    }
+
+    renderAll();
+  });
+
+  input.addEventListener("keydown", event => {
+    if (event.key === "Enter") {
+      input.blur();
+    }
+  });
+
+  return input;
+}
+function createRepositoryPathCell(
+  repo,
+  dataRow
+) {
+  const wrap = document.createElement("div");
+  wrap.className = "repo-path-cell";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className =
+    "repo-definition-input repo-path-input";
+
+  const pathIndex = getRepositoryPathIndex(repo);
+
+  if (pathIndex < 0) {
+    input.value = "";
+    input.placeholder = "Path列がありません";
+    input.disabled = true;
+    wrap.appendChild(input);
+    return wrap;
+  }
+
+  input.value = String(dataRow[pathIndex] ?? "");
+  input.title = input.value;
+
+  input.addEventListener("input", () => {
+    dataRow[pathIndex] = input.value;
+    input.title = input.value;
+  });
+
+  const picker = document.createElement("label");
+  picker.className = "repo-path-picker";
+  picker.title = "ファイルを選択";
+  picker.textContent = "⋯";
+
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+
+    const selectedPath =
+      file.webkitRelativePath || file.name;
+
+    input.value = selectedPath;
+    input.title = selectedPath;
+    dataRow[pathIndex] = selectedPath;
+
+    fileInput.value = "";
+  });
+
+  picker.appendChild(fileInput);
+  wrap.append(input, picker);
+  return wrap;
+}
+function deleteRepositoryRow(
+  sourceName,
+  repo,
+  rowIndex
+) {
+  const dataRow = repo.dataRows[rowIndex];
+  if (!dataRow) return;
+
+  const id =
+    String(dataRow[repo.idIndex] ?? "").trim();
+
+  if (id) {
+    const referencedRows =
+      getRepositoryReferenceRows(sourceName, id);
+
+    const message = referencedRows.length > 0
+      ? `"${id}" は Scenario の ${referencedRows.length} 行で使用されています。\n\n` +
+        `削除すると、そのIDが使われているすべての箇所を空欄にします。\n\n削除しますか？`
+      : `"${id}" を削除しますか？`;
+
+    if (!confirm(message)) return;
+
+    clearRepositoryReferences(sourceName, id);
+  }
+
+  repo.dataRows.splice(rowIndex, 1);
+  syncRepositoryIds(repo);
+  renderAll();
+}
+
+function renderActiveRepository() {
+  const meta = $("repositoryMeta");
+  const host = $("repositoryTableHost");
+  if (!meta || !host) return;
+
+  meta.innerHTML = "";
+  host.innerHTML = "";
+
+  if (state.activeEditor === "scenario" ||
+      state.activeEditor === "commandDefinitions") {
+    return;
+  }
+
+  const source = state.activeEditor;
+  const repo = state.repositories.get(source);
+
+  if (!repo) {
+    host.innerHTML =
+      `<div class="repository-empty">Repository定義がありません。</div>`;
+    return;
+  }
+
+  const title = document.createElement("strong");
+  title.textContent = source;
+
+  const file = document.createElement("span");
+  file.className = "repo-meta-file";
+  file.textContent =
+    repo.loaded ? repo.fileName : "未読込";
+  file.title = file.textContent;
+
+  const count = document.createElement("span");
+  count.className = "repo-meta-count";
+  count.textContent =
+    repo.loaded ? `${repo.ids.length} IDs` : "0 IDs";
+
+  meta.append(title, file, count);
+
+  if (!repo.loaded) {
+    const empty = document.createElement("div");
+    empty.className = "repository-empty";
+    empty.textContent =
+      `${source} のCSVを読み込んでください。`;
+    host.appendChild(empty);
+    return;
+  }
+
+  const wrap = document.createElement("div");
+  wrap.className = "repository-table-wrap";
+
+  const table = document.createElement("table");
+  table.className =
+    "repository-table repository-edit-table";
+
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th class="repo-grid-col-id">ID</th>
+        <th class="repo-grid-col-path">Path</th>
+        <th class="repo-grid-col-used" title="Timeline参照数">Refs</th>
+        <th class="repo-grid-col-actions"></th>
+      </tr>
+    </thead>
+  `;
+
+  const tbody = document.createElement("tbody");
+
+  repo.dataRows.forEach((dataRow, rowIndex) => {
+    const tr = document.createElement("tr");
+
+    const id =
+      String(dataRow[repo.idIndex] ?? "").trim();
+
+    const idTd = document.createElement("td");
+    idTd.className = "repo-grid-col-id";
+    idTd.appendChild(
+      createRepositoryIdCell(
+        source,
+        repo,
+        dataRow
+      )
+    );
+
+    const pathTd = document.createElement("td");
+    pathTd.className = "repo-grid-col-path";
+    pathTd.appendChild(
+      createRepositoryPathCell(
+        repo,
+        dataRow
+      )
+    );
+
+    const usedTd = document.createElement("td");
+    usedTd.className = "repo-grid-col-used";
+
+    const usedCount = id
+      ? getRepositoryReferenceRows(
+          source,
+          id
+        ).length
+      : 0;
+
+    const usedCell = document.createElement("span");
+    usedCell.className = "repo-used";
+    usedCell.classList.toggle(
+      "has-reference",
+      usedCount > 0
+    );
+    usedCell.textContent = String(usedCount);
+
+    usedTd.appendChild(usedCell);
+
+    const actionsTd = document.createElement("td");
+    actionsTd.className = "repo-grid-col-actions";
+
+    const del = document.createElement("button");
+    del.className = "repo-delete";
+    del.textContent = "削除";
+    del.addEventListener(
+      "click",
+      () => deleteRepositoryRow(
+        source,
+        repo,
+        rowIndex
+      )
+    );
+
+    actionsTd.appendChild(del);
+
+    tr.append(
+      idTd,
+      pathTd,
+      usedTd,
+      actionsTd
+    );
+
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  host.appendChild(wrap);
+}
+
+function renderCommandDefinitions() {
+  const meta = $("commandDefinitionMeta");
+  const host = $("commandDefinitionTableHost");
+
+  if (!meta || !host) return;
+
+  meta.innerHTML = "";
+  host.innerHTML = "";
+
+  if (state.activeEditor !== "commandDefinitions")
+    return;
+
+  const commands =
+    state.definitionDocument?.commands ?? [];
+
+  const title = document.createElement("strong");
+  title.textContent = "Command Definitions";
+
+  const file = document.createElement("span");
+  file.className = "definition-meta-file";
+  file.textContent =
+    state.definitionFileName || "未読込";
+  file.title = file.textContent;
+
+  const count = document.createElement("span");
+  count.className = "definition-meta-count";
+  count.textContent = `${commands.length} commands`;
+
+  meta.append(title, file, count);
+
+  if (!commands.length) {
+    const empty = document.createElement("div");
+    empty.className = "repository-empty";
+    empty.textContent =
+      "Command Definitions JSONを読み込んでください。";
+    host.appendChild(empty);
+    return;
+  }
+
+  const wrap = document.createElement("div");
+  wrap.className = "repository-table-wrap";
+
+  const table = document.createElement("table");
+  table.className = "repository-table";
+
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>Parameter</th>
+        <th>Type</th>
+        <th>Source</th>
+        <th>Details</th>
+      </tr>
+    </thead>
+  `;
+
+  const tbody = document.createElement("tbody");
+
+  for (const command of commands) {
+    const parameters = [];
+
+    for (const parameter of command.parameters ?? []) {
+      flattenCommandDefinition(
+        parameter,
+        parameter.name ?? "",
+        "",
+        parameters,
+        0
+      );
+    }
+
+    appendCommandDefinitionHeader(
+      tbody,
+      command.id ?? "",
+      parameters.length
+    );
+
+    if (!parameters.length) {
+      appendEmptyCommandDefinitionRow(tbody);
+      continue;
+    }
+
+    for (const parameter of parameters) {
+      appendCommandDefinitionParameterRow(
+        tbody,
+        parameter
+      );
+    }
+  }
+
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  host.appendChild(wrap);
+}
+
+function appendCommandDefinitionHeader(
+  tbody,
+  commandId,
+  parameterCount
+) {
+  const tr = document.createElement("tr");
+  tr.className = "definition-command-row";
+
+  const td = document.createElement("td");
+  td.colSpan = 4;
+
+  const header = document.createElement("div");
+  header.className = "definition-command-header";
+
+  const name = document.createElement("span");
+  name.className = "definition-command-name";
+  name.textContent = String(commandId);
+  name.title = String(commandId);
+
+  const count = document.createElement("span");
+  count.className = "definition-command-count";
+  count.textContent =
+    `${parameterCount} ${parameterCount === 1 ? "item" : "items"}`;
+
+  header.append(name, count);
+  td.appendChild(header);
+  tr.appendChild(td);
+  tbody.appendChild(tr);
+}
+
+function appendEmptyCommandDefinitionRow(tbody) {
+  const tr = document.createElement("tr");
+  tr.className = "definition-parameter-row";
+
+  const parameter = document.createElement("td");
+  parameter.className =
+    "definition-empty-parameter";
+  parameter.textContent = "No parameters";
+
+  tr.appendChild(parameter);
+  tr.appendChild(document.createElement("td"));
+  tr.appendChild(document.createElement("td"));
+  tr.appendChild(document.createElement("td"));
+
+  tbody.appendChild(tr);
+}
+
+function appendCommandDefinitionParameterRow(
+  tbody,
+  parameter
+) {
+  const tr = document.createElement("tr");
+  tr.className = "definition-parameter-row";
+
+  const parameterTd = document.createElement("td");
+  const parameterName = document.createElement("div");
+  parameterName.className =
+    "definition-parameter-name";
+  parameterName.style.paddingLeft =
+    `${parameter.depth * 16}px`;
+  parameterName.textContent = parameter.name;
+  parameterName.title = parameter.path;
+  parameterTd.appendChild(parameterName);
+
+  const typeTd = document.createElement("td");
+  typeTd.className = "definition-type";
+  typeTd.textContent = parameter.type;
+  typeTd.title = parameter.type;
+
+  const sourceTd = document.createElement("td");
+  sourceTd.className = "definition-source";
+  sourceTd.textContent = parameter.source;
+  sourceTd.title = parameter.source;
+
+  const detailsTd = document.createElement("td");
+  detailsTd.className = "definition-details";
+  detailsTd.textContent = parameter.details;
+
+  tr.append(
+    parameterTd,
+    typeTd,
+    sourceTd,
+    detailsTd
+  );
+
+  tbody.appendChild(tr);
+}
+
+function flattenCommandDefinition(
+  definition,
+  path,
+  inheritedSource,
+  result,
+  depth
+) {
+  if (!definition) return;
+
+  const type =
+    String(definition.type ?? "");
+
+  const source =
+    String(
+      definition.source ??
+      inheritedSource ??
+      ""
+    );
+
+  const pathParts =
+    String(path).split(".");
+
+  result.push({
+    name: pathParts[pathParts.length - 1],
+    path,
+    depth,
+    type,
+    source,
+    details:
+      getCommandDefinitionDetails(definition)
+  });
+
+  if (type !== "object")
+    return;
+
+  for (const property of definition.properties ?? []) {
+    const propertyName =
+      String(property.name ?? "");
+
+    flattenCommandDefinition(
+      property,
+      path
+        ? `${path}.${propertyName}`
+        : propertyName,
+      source,
+      result,
+      depth + 1
+    );
+  }
+}
+
+function getCommandDefinitionDetails(definition) {
+  const type =
+    String(definition.type ?? "");
+
+  if (type === "enum") {
+    const options =
+      (definition.options ?? []).join(", ");
+
+    return definition.multiSelect
+      ? `Options: ${options} / Multi Select`
+      : `Options: ${options}`;
+  }
+
+  if (type === "object") {
+    const count =
+      definition.properties?.length ?? 0;
+
+    return `${count} properties`;
+  }
+
+  if (type === "execution") {
+    return "Nested command execution";
+  }
+
+  return "";
+}
+
+function addRow() {
+  if (!state.definitionOrder.length) {
+    alert("先にCommand Definition JSONを読み込んでください。");
+    return;
+  }
+
+  const command = state.definitionOrder[0];
+  const previous = state.rows[state.rows.length - 1];
+  const time = previous ? previous.time : "0";
+
+  state.rows.push({
+    time,
+    command,
+    args: createDefaultArgs(command)
+  });
+  state.selectedIndex = state.rows.length - 1;
+  renderAll();
+}
+
+function duplicateRow() {
+  if (state.selectedIndex < 0) return;
+  const src = state.rows[state.selectedIndex];
+  const copy = {
+    time: src.time,
+    command: src.command,
+    args: [...src.args]
+  };
+  state.rows.splice(state.selectedIndex + 1, 0, copy);
+  state.selectedIndex++;
+  renderAll();
+}
+
+function deleteRow() {
+  if (state.selectedIndex < 0) return;
+  state.rows.splice(state.selectedIndex, 1);
+  if (!state.rows.length) state.selectedIndex = -1;
+  else state.selectedIndex = Math.min(state.selectedIndex, state.rows.length - 1);
+  renderAll();
+}
+
+function moveRow(delta) {
+  const i = state.selectedIndex;
+  const j = i + delta;
+  if (i < 0 || j < 0 || j >= state.rows.length) return;
+  [state.rows[i], state.rows[j]] = [state.rows[j], state.rows[i]];
+  state.selectedIndex = j;
+  renderAll();
+}
+
+function applySort() {
+  if (state.rows.length < 2) return;
+
+  const selectedRow =
+    state.selectedIndex >= 0 ? state.rows[state.selectedIndex] : null;
+
+  state.rows = state.rows
+    .map((row, originalIndex) => ({
+      row,
+      originalIndex,
+      time: Number(row.time),
+      command: String(row.command ?? "")
+    }))
+    .sort((a, b) => {
+      const aTimeValid = Number.isFinite(a.time);
+      const bTimeValid = Number.isFinite(b.time);
+
+      // Time sort is always the primary key once selected.
+      if (state.timeSortDirection) {
+        if (aTimeValid && !bTimeValid) return -1;
+        if (!aTimeValid && bTimeValid) return 1;
+
+        if (aTimeValid && bTimeValid) {
+          const timeDiff = a.time - b.time;
+          if (timeDiff !== 0) {
+            return state.timeSortDirection === "desc"
+              ? -timeDiff
+              : timeDiff;
+          }
+        }
+      }
+
+      // Command sort is the secondary key.
+      if (state.commandSortDirection) {
+        const commandDiff = a.command.localeCompare(
+          b.command,
+          undefined,
+          { sensitivity: "base" }
+        );
+
+        if (commandDiff !== 0) {
+          return state.commandSortDirection === "desc"
+            ? -commandDiff
+            : commandDiff;
+        }
+      }
+
+      // Stable ordering for otherwise equal rows.
+      return a.originalIndex - b.originalIndex;
+    })
+    .map(x => x.row);
+
+  state.selectedIndex = selectedRow
+    ? state.rows.indexOf(selectedRow)
+    : -1;
+
+  renderAll();
+}
+
+function sortScenario(key) {
+  if (key === "time") {
+    state.timeSortDirection =
+      state.timeSortDirection === "asc"
+        ? "desc"
+        : "asc";
+  }
+
+  if (key === "command") {
+    state.commandSortDirection =
+      state.commandSortDirection === "asc"
+        ? "desc"
+        : "asc";
+  }
+
+  applySort();
+}
+
+function updateScenarioToolbarState() {
+  const hasSelection =
+    state.selectedIndex >= 0 &&
+    state.selectedIndex < state.rows.length;
+
+  $("duplicateBtn").disabled = !hasSelection;
+  $("deleteBtn").disabled = !hasSelection;
+}
+
+function exportScenario() {
+  if (!state.rows.length) {
+    alert("Timelineに行がありません。");
+    return;
+  }
+
+  const invalid = validateAll(false);
+  if (invalid.length) {
+    const first = invalid[0];
+    state.selectedIndex = first.index;
+    renderAll();
+    alert(`Validation errorがあります。Row ${first.index + 1} を確認してください。`);
+    return;
+  }
+
+  try {
+    const timeline = state.rows.map(row => {
+      const cursor = { index: 0 };
+
+      return {
+        time: Number(row.time),
+        execution: buildExecution(
+          row.command,
+          row.args,
+          cursor,
+          0
+        )
+      };
+    });
+
+    const blob = new Blob(
+      [JSON.stringify(timeline, null, 2)],
+      { type: "application/json;charset=utf-8" }
+    );
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "timeline.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    alert(error.message || String(error));
+  }
+}
+
+function buildExecution(commandName, values, cursor, depth) {
+  if (depth > MAX_COMMAND_NESTING) {
+    throw new Error("Executionのネストが深すぎます。");
+  }
+
+  const def = state.definitions.get(commandName);
+  if (!def) {
+    throw new Error(`未定義のCommand '${commandName || "(empty)"}' です。`);
+  }
+
+  const argumentsObject = {};
+
+  for (const arg of def.args) {
+    const raw = String(values[cursor.index] ?? "").trim();
+    cursor.index++;
+
+    if (arg.type === "Command") {
+      if (!raw) {
+        throw new Error(`${getArgDisplayName(arg)} のCommandを選択してください。`);
+      }
+
+      setJsonPathValue(
+        argumentsObject,
+        arg.jsonPath,
+        buildExecution(raw, values, cursor, depth + 1)
+      );
+      continue;
+    }
+
+    setJsonPathValue(
+      argumentsObject,
+      arg.jsonPath,
+      editorTextToJsonValue(arg, raw)
+    );
+  }
+
+  return {
+    command: commandName,
+    arguments: argumentsObject
+  };
+}
+
+function setJsonPathValue(root, path, value) {
+  let current = root;
+
+  for (let i = 0; i < path.length - 1; i++) {
+    const segment = path[i];
+
+    if (!current[segment] ||
+        typeof current[segment] !== "object" ||
+        Array.isArray(current[segment])) {
+      current[segment] = {};
+    }
+
+    current = current[segment];
+  }
+
+  current[path[path.length - 1]] = value;
+}
+
+function editorTextToJsonValue(arg, raw) {
+  switch (arg.type) {
+    case "Int":
+      return Number.parseInt(raw, 10);
+
+    case "Float":
+      return Number(raw);
+
+    case "Bool":
+      return toBoolText(raw) === "true";
+
+    case "Enum":
+      return arg.multiSelect
+        ? raw
+            .split("|")
+            .map(v => v.trim())
+            .filter(Boolean)
+            .join(", ")
+        : raw;
+
+    default:
+      return raw;
+  }
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+$("definitionFile").addEventListener("change", async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  try {
+    loadDefinitions(await file.text(), file.name);
+  } catch (err) {
+    alert(err.message || String(err));
+  } finally {
+    e.target.value = "";
+  }
+});
+
+$("scenarioFile").addEventListener("change", async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  try {
+    importScenario(await file.text());
+  } catch (err) {
+    alert(err.message || String(err));
+  } finally {
+    e.target.value = "";
+  }
+});
+
+$("repositoryReloadFile").addEventListener("change", async (e) => {
+  const file = e.target.files?.[0];
+  if (!file || state.activeEditor === "scenario") return;
+
+  try {
+    loadRepository(
+      state.activeEditor,
+      await file.text(),
+      file.name
+    );
+  } catch (err) {
+    alert(err.message || String(err));
+  } finally {
+    e.target.value = "";
+  }
+});
+
+$("repositorySaveBtn").addEventListener("click", () => {
+  if (state.activeEditor === "scenario") return;
+  exportRepository(state.activeEditor);
+});
+
+$("repositoryAddIdBtn").addEventListener("click", () => {
+  if (state.activeEditor === "scenario") return;
+  addRepositoryId(state.activeEditor);
+});
+
+$("addBtn").addEventListener("click", addRow);
+$("duplicateBtn").addEventListener("click", duplicateRow);
+$("deleteBtn").addEventListener("click", deleteRow);
+$("validateBtn").addEventListener("click", () => validateAll(true));
+$("exportBtn").addEventListener("click", exportScenario);
+
+renderAll();
+</script>
+</body>
+</html>
+
+<style>.workspace{grid-template-columns:1fr}</style>
