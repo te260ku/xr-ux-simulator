@@ -1,0 +1,109 @@
+{
+  "commands": [
+    {
+      "id": "PlaySound",
+      "parameters": [
+        {
+          "name": "soundId",
+          "type": "object",
+          "source": "Sound",
+          "properties": [
+            {
+              "name": "value",
+              "type": "string"
+            }
+          ],
+          "description": "再生する音声ID。"
+        },
+        {
+          "name": "req",
+          "type": "object",
+          "description": "元のクラス",
+          "properties": [
+            {
+              "name": "a1",
+              "type": "float",
+              "description": "a1の説明",
+              "min": 0.0,
+              "max": 1.0
+            },
+            {
+              "name": "a2",
+              "type": "int",
+              "description": "a2の説明",
+              "min": 0,
+              "max": 100
+            },
+            {
+              "name": "a3",
+              "type": "enum",
+              "options": [
+                "Normal",
+                "Disabled",
+                "Hidden"
+              ],
+              "multiSelect": false,
+              "description": "a3の説明"
+            }
+          ]
+        },
+        {
+          "name": "volume",
+          "type": "float",
+          "description": "再生音量。0.0〜1.0。",
+          "min": 0.0,
+          "max": 1.0
+        }
+      ]
+    },
+    {
+      "id": "SetDiagCommand",
+      "parameters": [
+        {
+          "name": "id",
+          "type": "object",
+          "properties": [
+            {
+              "name": "value",
+              "type": "int"
+            }
+          ],
+          "description": "割り当て先のDiag Command ID。"
+        },
+        {
+          "name": "execution",
+          "type": "execution",
+          "description": "Diag Commandへ割り当てるTimeline Command。"
+        }
+      ]
+    },
+    {
+      "id": "SetUiState",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "object",
+          "source": "UiTarget",
+          "properties": [
+            {
+              "name": "value",
+              "type": "string"
+            }
+          ],
+          "description": "状態を変更するUIのID。"
+        },
+        {
+          "name": "state",
+          "type": "enum",
+          "options": [
+            "Normal",
+            "Disabled",
+            "Hidden"
+          ],
+          "multiSelect": false,
+          "description": "UIへ設定する状態。"
+        }
+      ]
+    }
+  ]
+}

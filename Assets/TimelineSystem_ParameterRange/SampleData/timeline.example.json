@@ -1,0 +1,44 @@
+[
+  {
+    "time": 0.0,
+    "execution": {
+      "command": "PlaySound",
+      "arguments": {
+        "soundId": {
+          "value": "Warning01"
+        },
+        "volume": 0.8,
+        "req": {
+          "a1": 0.5,
+          "a2": 10,
+          "a3": "Normal"
+        }
+      }
+    }
+  },
+  {
+    "time": 2.0,
+    "execution": {
+      "command": "SetDiagCommand",
+      "arguments": {
+        "id": {
+          "value": 10
+        },
+        "execution": {
+          "command": "PlaySound",
+          "arguments": {
+            "soundId": {
+              "value": "Warning01"
+            },
+            "volume": 1.0,
+            "req": {
+              "a1": 0.5,
+              "a2": 10,
+              "a3": "Normal"
+            }
+          }
+        }
+      }
+    }
+  }
+]

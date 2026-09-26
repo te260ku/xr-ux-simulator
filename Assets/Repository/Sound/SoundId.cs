@@ -1,20 +1,20 @@
-using System;
+// using System;
 
-public record SoundId
-{
-    public string Value { get; }
+// public record SoundId
+// {
+//     public string Value { get; }
 
-    public SoundId(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new ArgumentException(
-                "SoundId must not be empty.",
-                nameof(value));
-        }
+//     public SoundId(string value)
+//     {
+//         if (string.IsNullOrWhiteSpace(value))
+//         {
+//             throw new ArgumentException(
+//                 "SoundId must not be empty.",
+//                 nameof(value));
+//         }
 
-        Value = value;
-    }
+//         Value = value;
+//     }
 
-    public override string ToString() => Value;
-}
+//     public override string ToString() => Value;
+// }
