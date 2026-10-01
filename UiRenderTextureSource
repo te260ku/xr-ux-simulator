@@ -1,0 +1,251 @@
+using UnityEngine;
+
+[RequireComponent(typeof(Camera))]
+public sealed class UiRenderTextureSource : MonoBehaviour
+{
+    [SerializeField] private int width = 2048;
+    [SerializeField] private int height = 512;
+
+    private Camera uiCamera;
+
+    public RenderTexture Texture { get; private set; }
+
+    private void Awake()
+    {
+        uiCamera = GetComponent<Camera>();
+
+        CreateTexture();
+        ConfigureCamera();
+    }
+
+    private void CreateTexture()
+    {
+        Texture = new RenderTexture(
+            width,
+            height,
+            0,
+            RenderTextureFormat.ARGB32);
+
+        Texture.name = "BlackCeramicUi";
+        Texture.Create();
+    }
+
+    private void ConfigureCamera()
+    {
+        uiCamera.targetTexture = Texture;
+        uiCamera.clearFlags = CameraClearFlags.SolidColor;
+        uiCamera.backgroundColor = new Color(0, 0, 0, 0);
+    }
+
+    private void OnDestroy()
+    {
+        uiCamera.targetTexture = null;
+
+        Texture.Release();
+        Destroy(Texture);
+    }
+}
+
+
+
+using System.Collections.Generic;
+using UnityEngine;
+
+[RequireComponent(typeof(MeshFilter))]
+public sealed class CurvedDisplayUvMapper : MonoBehaviour
+{
+    [SerializeField] private bool flipHorizontal;
+    [SerializeField] private bool flipVertical;
+
+    private MeshFilter meshFilter;
+
+    private void Awake()
+    {
+        meshFilter = GetComponent<MeshFilter>();
+
+        Generate();
+    }
+
+    private void Generate()
+    {
+        Mesh mesh = meshFilter.mesh;
+
+        Vector3[] vertices = mesh.vertices;
+        Bounds bounds = mesh.bounds;
+
+        List<Vector2> uvs = CreateUvs(
+            vertices,
+            bounds);
+
+        mesh.SetUVs(0, uvs);
+    }
+
+    private List<Vector2> CreateUvs(
+        Vector3[] vertices,
+        Bounds bounds)
+    {
+        var result = new List<Vector2>(vertices.Length);
+
+        foreach (Vector3 vertex in vertices)
+            result.Add(CreateUv(vertex, bounds));
+
+        return result;
+    }
+
+    private Vector2 CreateUv(
+        Vector3 vertex,
+        Bounds bounds)
+    {
+        float u = Normalize(
+            vertex.x,
+            bounds.min.x,
+            bounds.max.x);
+
+        float v = Normalize(
+            vertex.y,
+            bounds.min.y,
+            bounds.max.y);
+
+        return ApplyFlip(new Vector2(u, v));
+    }
+
+    private float Normalize(
+        float value,
+        float min,
+        float max)
+    {
+        return Mathf.InverseLerp(min, max, value);
+    }
+
+    private Vector2 ApplyFlip(Vector2 uv)
+    {
+        if (flipHorizontal)
+            uv.x = 1f - uv.x;
+
+        if (flipVertical)
+            uv.y = 1f - uv.y;
+
+        return uv;
+    }
+}
+
+
+
+Shader "PoC/BlackCeramicUi"
+{
+    Properties
+    {
+        _UiTexture("UI Texture", 2D) = "black" {}
+        _SurfaceColor("Surface Color", Color) = (0, 0, 0, 1)
+        _UiIntensity("UI Intensity", Float) = 1
+    }
+
+    SubShader
+    {
+        Tags
+        {
+            "RenderType" = "Opaque"
+            "RenderPipeline" = "UniversalPipeline"
+        }
+
+        Pass
+        {
+            HLSLPROGRAM
+
+            #pragma vertex Vert
+            #pragma fragment Frag
+
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+            TEXTURE2D(_UiTexture);
+            SAMPLER(sampler_UiTexture);
+
+            CBUFFER_START(UnityPerMaterial)
+                float4 _SurfaceColor;
+                float _UiIntensity;
+            CBUFFER_END
+
+            struct Attributes
+            {
+                float4 positionOS : POSITION;
+                float2 uv : TEXCOORD0;
+            };
+
+            struct Varyings
+            {
+                float4 positionCS : SV_POSITION;
+                float2 uv : TEXCOORD0;
+            };
+
+            Varyings Vert(Attributes input)
+            {
+                Varyings output;
+
+                output.positionCS =
+                    TransformObjectToHClip(
+                        input.positionOS.xyz);
+
+                output.uv = input.uv;
+
+                return output;
+            }
+
+            half4 Frag(Varyings input) : SV_Target
+            {
+                half4 ui =
+                    SAMPLE_TEXTURE2D(
+                        _UiTexture,
+                        sampler_UiTexture,
+                        input.uv);
+
+                half3 uiColor =
+                    ui.rgb * _UiIntensity;
+
+                half3 color =
+                    lerp(
+                        _SurfaceColor.rgb,
+                        uiColor,
+                        ui.a);
+
+                return half4(color, 1);
+            }
+
+            ENDHLSL
+        }
+    }
+}
+
+
+using UnityEngine;
+
+[RequireComponent(typeof(Renderer))]
+public sealed class CurvedUiSurface : MonoBehaviour
+{
+    [SerializeField]
+    private UiRenderTextureSource uiSource;
+
+    private static readonly int UiTextureId =
+        Shader.PropertyToID("_UiTexture");
+
+    private Renderer targetRenderer;
+    private MaterialPropertyBlock properties;
+
+    private void Start()
+    {
+        targetRenderer = GetComponent<Renderer>();
+        properties = new MaterialPropertyBlock();
+
+        ApplyTexture();
+    }
+
+    private void ApplyTexture()
+    {
+        targetRenderer.GetPropertyBlock(properties);
+
+        properties.SetTexture(
+            UiTextureId,
+            uiSource.Texture);
+
+        targetRenderer.SetPropertyBlock(properties);
+    }
+}
