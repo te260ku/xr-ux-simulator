@@ -19,7 +19,7 @@ MonoBehaviour:
     width: 1918
     height: 980
   m_ShowMode: 4
-  m_Title: Hierarchy
+  m_Title: Console
   m_RootView: {fileID: 2}
   m_MinSize: {x: 875, y: 300}
   m_MaxSize: {x: 10000, y: 10000}
@@ -141,8 +141,8 @@ MonoBehaviour:
     y: 0
     width: 368
     height: 924
-  m_MinSize: {x: 201, y: 226}
-  m_MaxSize: {x: 4001, y: 4026}
+  m_MinSize: {x: 200, y: 200}
+  m_MaxSize: {x: 4000, y: 4000}
   m_ActualView: {fileID: 16}
   m_Panes:
   - {fileID: 16}
@@ -193,8 +193,8 @@ MonoBehaviour:
     y: 0
     width: 1101
     height: 316
-  m_MinSize: {x: 202, y: 226}
-  m_MaxSize: {x: 4002, y: 4026}
+  m_MinSize: {x: 200, y: 200}
+  m_MaxSize: {x: 4000, y: 4000}
   m_ActualView: {fileID: 17}
   m_Panes:
   - {fileID: 17}
@@ -246,8 +246,8 @@ MonoBehaviour:
     y: 0
     width: 578
     height: 608
-  m_MinSize: {x: 202, y: 226}
-  m_MaxSize: {x: 4002, y: 4026}
+  m_MinSize: {x: 200, y: 200}
+  m_MaxSize: {x: 4000, y: 4000}
   m_ActualView: {fileID: 15}
   m_Panes:
   - {fileID: 15}
@@ -265,7 +265,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 1
   m_Script: {fileID: 12006, guid: 0000000000000000e000000000000000, type: 0}
-  m_Name: ProjectBrowser
+  m_Name: ConsoleWindow
   m_EditorClassIdentifier: 
   m_Children: []
   m_Position:
@@ -274,14 +274,14 @@ MonoBehaviour:
     y: 0
     width: 523
     height: 608
-  m_MinSize: {x: 232, y: 276}
-  m_MaxSize: {x: 10002, y: 10026}
-  m_ActualView: {fileID: 20}
+  m_MinSize: {x: 100, y: 100}
+  m_MaxSize: {x: 4000, y: 4000}
+  m_ActualView: {fileID: 21}
   m_Panes:
   - {fileID: 20}
   - {fileID: 21}
-  m_Selected: 0
-  m_LastSelected: 1
+  m_Selected: 1
+  m_LastSelected: 0
 --- !u!114 &12
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -301,8 +301,8 @@ MonoBehaviour:
     y: 0
     width: 449
     height: 924
-  m_MinSize: {x: 276, y: 76}
-  m_MaxSize: {x: 4001, y: 4026}
+  m_MinSize: {x: 275, y: 50}
+  m_MaxSize: {x: 4000, y: 4000}
   m_ActualView: {fileID: 22}
   m_Panes:
   - {fileID: 22}
@@ -351,7 +351,7 @@ MonoBehaviour:
   m_LockTracker:
     m_IsLocked: 0
   m_LastSelectedObjectID:
-    m_Data: 0
+    m_Data: 78750
 --- !u!114 &14
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -790,11 +790,23 @@ MonoBehaviour:
   m_SceneHierarchy:
     m_TreeViewState:
       scrollPos: {x: 0, y: 0}
-      m_SelectedIDs: []
+      m_SelectedIDs:
+      - m_Data: 78750
       m_LastClickedID:
-        m_Data: 0
+        m_Data: 78750
       m_ExpandedIDs:
-      - m_Data: -1524
+      - m_Data: -24988
+      - m_Data: -16562
+      - m_Data: -13374
+      - m_Data: -12904
+      - m_Data: -12898
+      - m_Data: -10030
+      - m_Data: -6838
+      - m_Data: -6368
+      - m_Data: -6362
+      - m_Data: -3124
+      - m_Data: -2504
+      - m_Data: -1460
       m_RenameOverlay:
         m_UserAcceptedRename: 0
         m_Name: 
@@ -1813,7 +1825,7 @@ MonoBehaviour:
   m_ViewMode: 1
   m_StartGridSize: 64
   m_LastFolders:
-  - Assets
+  - Assets/Config
   m_LastFoldersGridSize: -1
   m_LastProjectPath: C:\Users\tetsuro\xr-ux-simulator
   m_LockTracker:
@@ -1822,19 +1834,15 @@ MonoBehaviour:
   m_FolderTreeState:
     scrollPos: {x: 0, y: 127}
     m_SelectedIDs:
-    - m_Data: 68926
+    - m_Data: 69664
     m_LastClickedID:
-      m_Data: 68926
+      m_Data: 69664
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 68926
-    - m_Data: 68928
-    - m_Data: 68930
-    - m_Data: 68932
-    - m_Data: 69182
-    - m_Data: 71126
-    - m_Data: 72434
-    - m_Data: 72440
+    - m_Data: 69664
+    - m_Data: 69666
+    - m_Data: 69668
+    - m_Data: 69670
     - m_Data: 1000000000
     - m_Data: 2147483647
     m_RenameOverlay:
@@ -1870,10 +1878,10 @@ MonoBehaviour:
       m_Data: 0
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 68926
-    - m_Data: 68928
-    - m_Data: 68930
-    - m_Data: 68932
+    - m_Data: 69664
+    - m_Data: 69666
+    - m_Data: 69668
+    - m_Data: 69670
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1932,7 +1940,7 @@ MonoBehaviour:
       m_Icon: {fileID: 0}
       m_ResourceFile: 
     m_NewAssetIndexInList: -1
-    m_ScrollPosition: {x: 0, y: 323}
+    m_ScrollPosition: {x: 0, y: 0}
     m_GridSize: 64
   m_SkipHiddenPackages: 0
   m_DirectoriesAreaWidth: 178
