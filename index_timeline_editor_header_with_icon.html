@@ -1,6 +1,25 @@
 <!doctype html>
 <html lang="ja">
 <head>
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="
+      default-src 'none';
+      script-src 'unsafe-inline';
+      style-src 'unsafe-inline';
+      img-src data: blob:;
+      media-src data: blob:;
+      font-src data:;
+      connect-src 'none';
+      object-src 'none';
+      frame-src 'none';
+      child-src 'none';
+      worker-src 'none';
+      manifest-src 'none';
+      form-action 'none';
+      base-uri 'none';
+    "
+  >
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Timeline Editor</title>
@@ -869,6 +888,7 @@ td.grid-col-command .grid-control{
 /* Shared page meta */
 #scenarioContent .repository-meta,
 #repositoryContent .repository-meta,
+#rootDirectoryContent .repository-meta,
 #commandDefinitionContent .repository-meta{
   width:min(720px, 100%);
   max-width:720px;
@@ -990,12 +1010,17 @@ td.grid-col-command .grid-control{
 
 #commandDefinitionContent .repository-table th:nth-child(1),
 #commandDefinitionContent .repository-table td:nth-child(1){
-  width:36%;
+  width:34%;
 }
 
 #commandDefinitionContent .repository-table th:nth-child(2),
 #commandDefinitionContent .repository-table td:nth-child(2){
-  width:64%;
+  width:18%;
+}
+
+#commandDefinitionContent .repository-table th:nth-child(3),
+#commandDefinitionContent .repository-table td:nth-child(3){
+  width:48%;
 }
 
 #commandDefinitionContent .definition-command-row td{
@@ -1053,6 +1078,18 @@ td.grid-col-command .grid-control{
   word-break:normal;
 }
 
+
+.definition-parameter-type{
+  color:#667085;
+  font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+  font-size:11.5px;
+  line-height:1.45;
+  white-space:nowrap;
+}
+
+.definition-parameter-type.is-empty{
+  color:#b0b7c3;
+}
 
 .definition-description{
   color:#667085;
@@ -2356,14 +2393,12 @@ header{
   overflow:visible;
 }
 
-/* source argument = file path editor */
+/* filePath:true argument = full-cell file path editor */
 .grid-file-path-control{
   position:absolute;
-  left:0;
-  right:0;
-  top:18px;
-  bottom:0;
-  height:36px;
+  inset:0;
+  width:100%;
+  height:54px;
   display:flex;
   align-items:stretch;
   min-width:0;
@@ -2373,9 +2408,9 @@ header{
   flex:1 1 auto;
   min-width:0;
   width:100%;
-  height:36px;
+  height:54px;
   margin:0;
-  padding:0 4px 0 8px;
+  padding:18px 4px 3px 8px;
   border:0;
   border-radius:0;
   background:transparent;
@@ -2395,7 +2430,7 @@ header{
   position:relative;
   flex:0 0 34px;
   width:34px;
-  height:36px;
+  height:54px;
   display:flex;
   align-items:center;
   justify-content:center;
@@ -2422,9 +2457,12 @@ header{
   pointer-events:none;
 }
 
+.grid-edit-cell.invalid .grid-file-path-control{
+  box-shadow:inset 0 -2px 0 #f04438;
+}
+
 .grid-edit-cell.invalid .grid-file-path-input{
   color:#b42318;
-  border-bottom:2px solid #f04438;
 }
 
 /* Subtle app version. */
@@ -2441,10 +2479,1320 @@ header{
 }
 </style>
 
+
+<style id="grid-focus-background-fix">
+/* Keep argument editing visually continuous with the cell background. */
+.grid-edit-cell > input.grid-control:focus,
+.grid-edit-cell > .grid-checkbox-control:focus-within,
+.grid-edit-cell > .grid-range-control:focus-within{
+  background:transparent;
+}
+</style>
+
+
+<style id="grid-focus-outline-fix">
+/* Remove the blue focus rectangle from ordinary argument editors. */
+.grid-edit-cell > input.grid-control:focus,
+.grid-edit-cell > .grid-checkbox-control:focus-within,
+.grid-edit-cell > .grid-range-control:focus-within{
+  outline:none;
+  box-shadow:none;
+}
+</style>
+
+
+<style id="timeline-delete-accessibility-refined">
+/* Row actions live beside the row number instead of at the far-right edge. */
+.direct-table th.grid-col-actions,
+.direct-table td.grid-col-actions{
+  position:sticky;
+  left:46px;
+  right:auto;
+  width:34px;
+  min-width:34px;
+  max-width:34px;
+  padding:0;
+  box-shadow:none;
+}
+
+.direct-table th.grid-col-actions{
+  z-index:7;
+  background:#f5f6f8;
+}
+
+.direct-table td.grid-col-actions{
+  z-index:4;
+  background:#fff;
+}
+
+/* Sticky offsets after inserting the delete column beside "#". */
+.direct-table th.grid-col-time,
+.direct-table td.grid-col-time{
+  left:80px;
+}
+
+.direct-table th.grid-col-command,
+.direct-table td.grid-col-command{
+  left:188px;
+}
+
+/* Preserve the right edge separator of the frozen structural columns. */
+.direct-table td.grid-col-command{
+  box-shadow:1px 0 0 #e4e7ec;
+}
+
+/* Selected and hovered frozen cells follow the row background. */
+.direct-table tbody tr.grid-row-selected > td.grid-col-actions{
+  background:#eaf2ff !important;
+}
+
+.direct-table tbody tr:not(.grid-row-selected):hover > td.grid-col-actions{
+  background:#fafbfc;
+}
+
+/* Keep the grid calm: show the destructive action only where it is relevant. */
+.direct-table td.grid-col-actions .row-delete-icon-button{
+  opacity:0;
+  visibility:hidden;
+  pointer-events:none;
+  transition:opacity .12s ease;
+}
+
+.direct-table tbody tr.grid-row-selected
+  > td.grid-col-actions .row-delete-icon-button,
+.direct-table tbody tr:hover
+  > td.grid-col-actions .row-delete-icon-button,
+.direct-table td.grid-col-actions:focus-within
+  .row-delete-icon-button{
+  opacity:1;
+  visibility:visible;
+  pointer-events:auto;
+}
+
+.direct-table td.grid-col-actions .row-delete-cell{
+  height:54px;
+}
+
+/* Header has no right-edge shadow now that Actions is a left frozen column. */
+.direct-table th.grid-col-actions{
+  box-shadow:none;
+}
+</style>
+
+
+<style id="timeline-file-root-browser-style">
+/* Keep Timeline metadata compact; Root Directory now has its own tab. */
+#scenarioContent .timeline-meta-wrap{
+  padding:5px 12px 7px;
+}
+
+#scenarioContent .timeline-meta-row{
+  width:min(720px, 100%);
+  max-width:720px;
+  min-width:0;
+  min-height:26px;
+  display:flex;
+  align-items:center;
+  margin-bottom:0;
+  padding:0 1px;
+}
+
+.timeline-document-meta{
+  min-width:0;
+  display:flex;
+  align-items:center;
+  flex:1 1 auto;
+  overflow:hidden;
+}
+
+.timeline-file-browser-dialog{
+  width:min(560px, calc(100vw - 32px));
+  max-width:560px;
+  height:min(520px, calc(100vh - 48px));
+  max-height:520px;
+  padding:0;
+  overflow:hidden;
+  border:1px solid #d0d5dd;
+  border-radius:10px;
+  background:#fff;
+  color:#101828;
+  box-shadow:0 20px 48px rgba(16,24,40,.22);
+}
+
+.timeline-file-browser-dialog::backdrop{
+  background:rgba(16,24,40,.24);
+}
+
+.timeline-file-browser-header{
+  min-height:58px;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:10px 12px 9px 14px;
+  border-bottom:1px solid #e4e7ec;
+  background:#fff;
+}
+
+.timeline-file-browser-heading{
+  min-width:0;
+  flex:1 1 auto;
+}
+
+.timeline-file-browser-title{
+  color:#344054;
+  font-size:13px;
+  font-weight:600;
+}
+
+
+.timeline-file-browser-close{
+  width:28px;
+  height:28px;
+  min-width:28px;
+  padding:0;
+  border:0;
+  background:transparent;
+  color:#98a2b3;
+  font-size:19px;
+  line-height:28px;
+}
+
+.timeline-file-browser-close:hover{
+  background:#f2f4f7;
+  color:#475467;
+}
+
+.timeline-file-browser-breadcrumb{
+  min-height:38px;
+  display:flex;
+  align-items:center;
+  gap:4px;
+  overflow-x:auto;
+  padding:5px 12px;
+  border-bottom:1px solid #eaecf0;
+  background:#fafbfc;
+  scrollbar-width:thin;
+}
+
+.timeline-file-browser-crumb{
+  flex:0 0 auto;
+  max-width:180px;
+  padding:3px 5px;
+  overflow:hidden;
+  border:0;
+  background:transparent;
+  color:#475467;
+  font-size:11px;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.timeline-file-browser-crumb:hover{
+  background:#eef2f6;
+}
+
+.timeline-file-browser-crumb-separator{
+  flex:0 0 auto;
+  color:#b0b7c3;
+  font-size:11px;
+}
+
+.timeline-file-browser-entries{
+  height:calc(100% - 146px);
+  min-height:0;
+  overflow:auto;
+  padding:6px;
+  background:#fff;
+}
+
+.timeline-file-browser-entry{
+  width:100%;
+  height:34px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin:0;
+  padding:0 9px;
+  overflow:hidden;
+  border:0;
+  border-radius:5px;
+  background:transparent;
+  color:#344054;
+  text-align:left;
+  font-size:12px;
+}
+
+.timeline-file-browser-entry:hover{
+  background:#f2f4f7;
+}
+
+.timeline-file-browser-entry.is-parent{
+  color:#667085;
+}
+
+.timeline-file-browser-entry-icon{
+  width:12px;
+  flex:0 0 12px;
+  color:#98a2b3;
+  text-align:center;
+  font-size:16px;
+  line-height:1;
+}
+
+.timeline-file-browser-entry-name{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.timeline-file-browser-loading,
+.timeline-file-browser-empty{
+  min-height:120px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:20px;
+  color:#98a2b3;
+  font-size:11.5px;
+  text-align:center;
+}
+
+.timeline-file-browser-footer{
+  min-height:50px;
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  padding:8px 12px;
+  border-top:1px solid #e4e7ec;
+  background:#fafbfc;
+}
+
+.timeline-file-browser-footer button{
+  padding:5px 9px;
+  font-size:11px;
+}
+
+.grid-file-path-picker{
+  margin:0;
+  padding:0;
+  border-radius:0;
+}
+</style>
+
+
+<style id="timeline-local-security-style">
+</style>
+
+<style id="root-directory-tab-style">
+.editor-tab.reference-tab.reference-tab-following{
+  margin-left:0;
+  padding-left:15px;
+}
+
+.editor-tab.reference-tab.reference-tab-following::before{
+  display:none;
+}
+
+.editor-tab.reference-tab.reference-tab-following::after{
+  left:15px;
+}
+
+/* Root Directory follows the same Toolbar -> Meta -> Content rhythm
+   used by Timeline, Repository and Command Definitions. */
+#rootDirectoryToolbar{
+  display:block;
+  padding:8px 12px;
+}
+
+#rootDirectoryToolbar.hidden{
+  display:none;
+}
+
+.root-directory-toolbar-inner{
+  width:min(720px, 100%);
+  max-width:720px;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  min-height:32px;
+}
+
+.root-directory-toolbar-inner .spacer{
+  flex:1;
+}
+
+#rootDirectoryContent{
+  padding:12px;
+  overflow-y:auto;
+  overflow-x:hidden;
+}
+
+#rootDirectoryContent .root-directory-meta{
+  margin-bottom:10px;
+}
+
+.root-directory-meta-icon{
+  width:14px;
+  height:14px;
+  flex:0 0 14px;
+  margin-right:7px;
+  color:#98a2b3;
+}
+
+.root-directory-meta-icon svg{
+  width:100%;
+  height:100%;
+  display:block;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.55;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+
+.root-directory-tree-wrap{
+  width:min(720px, 100%);
+  max-width:720px;
+  overflow:hidden;
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:#fff;
+}
+
+.root-directory-tree-wrap.hidden{
+  display:none;
+}
+
+.root-directory-tree-header{
+  height:36px;
+  display:flex;
+  align-items:center;
+  padding:0 10px;
+  border-bottom:1px solid var(--line);
+  background:#f8fafc;
+  color:#475467;
+  font-size:11px;
+  font-weight:600;
+  line-height:1.25;
+  letter-spacing:.02em;
+}
+
+.root-directory-tree-host{
+  width:100%;
+}
+
+.root-directory-tree-row{
+  --tree-depth:0;
+  min-height:34px;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:
+    0 10px
+    0 calc(8px + var(--tree-depth) * 18px);
+  border-bottom:1px solid var(--line);
+  background:#fff;
+  color:#344054;
+  font-size:12px;
+  line-height:1.35;
+}
+
+.root-directory-tree-row:last-child{
+  border-bottom:0;
+}
+
+.root-directory-tree-row:hover{
+  background:#fafbfc;
+}
+
+.root-directory-tree-toggle{
+  width:18px;
+  height:24px;
+  min-width:18px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  margin:0;
+  padding:0;
+  border:0;
+  border-radius:4px;
+  background:transparent;
+  color:#98a2b3;
+  font-size:16px;
+  font-weight:400;
+  line-height:1;
+}
+
+button.root-directory-tree-toggle:hover{
+  background:#f2f4f7;
+  color:#667085;
+}
+
+.root-directory-tree-icon{
+  position:relative;
+  width:14px;
+  height:14px;
+  min-width:14px;
+  color:#98a2b3;
+}
+
+.root-directory-tree-icon.is-folder::before{
+  content:"";
+  position:absolute;
+  left:1px;
+  top:3px;
+  width:12px;
+  height:8px;
+  border:1.25px solid currentColor;
+  border-radius:2px;
+}
+
+.root-directory-tree-icon.is-folder::after{
+  content:"";
+  position:absolute;
+  left:2px;
+  top:1px;
+  width:5px;
+  height:4px;
+  border:1.25px solid currentColor;
+  border-bottom:0;
+  border-radius:2px 2px 0 0;
+}
+
+.root-directory-tree-icon.is-file::before{
+  content:"";
+  position:absolute;
+  left:3px;
+  top:1px;
+  width:8px;
+  height:11px;
+  border:1.25px solid currentColor;
+  border-radius:1px;
+}
+
+.root-directory-tree-name{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.root-directory-tree-loading,
+.root-directory-tree-empty{
+  min-height:54px;
+  display:flex;
+  align-items:center;
+  padding:0 10px;
+  color:#98a2b3;
+  font-size:11.5px;
+}
+
+</style>
+
+
+<style id="root-directory-file-tree-refined-style">
+/* Refined tree: keep the same visual language as Repository /
+   Command Definitions, while making hierarchy easier to scan. */
+
+.root-directory-tree-wrap{
+  border-color:#e1e5ea;
+  border-radius:7px;
+  box-shadow:0 1px 2px rgba(16,24,40,.025);
+}
+
+.root-directory-tree-header{
+  height:34px;
+  padding:0 12px;
+  background:#f8fafc;
+  border-bottom-color:#e4e7ec;
+  color:#667085;
+  font-size:10.5px;
+  font-weight:600;
+  letter-spacing:.025em;
+}
+
+.root-directory-tree-host{
+  background:#fff;
+}
+
+.root-directory-tree-row{
+  position:relative;
+  min-height:32px;
+  gap:7px;
+  padding:
+    0 12px
+    0 calc(8px + var(--tree-depth) * 18px);
+  border-bottom-color:#eef0f3;
+  color:#475467;
+  font-size:11.5px;
+  transition:background-color .08s ease;
+}
+
+.root-directory-tree-row:hover{
+  background:#f8fafc;
+}
+
+/* A subtle guide for nested rows without turning the tree into a busy grid. */
+.root-directory-tree-row[style*="--tree-depth: 1"],
+.root-directory-tree-row[style*="--tree-depth: 2"],
+.root-directory-tree-row[style*="--tree-depth: 3"],
+.root-directory-tree-row[style*="--tree-depth: 4"],
+.root-directory-tree-row[style*="--tree-depth: 5"],
+.root-directory-tree-row[style*="--tree-depth: 6"],
+.root-directory-tree-row[style*="--tree-depth: 7"],
+.root-directory-tree-row[style*="--tree-depth: 8"]{
+  background-image:
+    linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 6px,
+      #eef1f4 6px,
+      #eef1f4 calc(100% - 6px),
+      transparent calc(100% - 6px)
+    );
+  background-repeat:no-repeat;
+  background-size:1px 100%;
+  background-position:
+    calc(17px + (var(--tree-depth) - 1) * 18px) 0;
+}
+
+.root-directory-tree-row:hover{
+  background-color:#f8fafc;
+}
+
+/* Chevron is CSS-drawn so it does not depend on font glyph rendering. */
+.root-directory-tree-toggle{
+  position:relative;
+  width:18px;
+  height:24px;
+  min-width:18px;
+  border-radius:4px;
+  color:#98a2b3;
+}
+
+button.root-directory-tree-toggle::before{
+  content:"";
+  width:5px;
+  height:5px;
+  border-right:1.4px solid currentColor;
+  border-bottom:1.4px solid currentColor;
+  transform:rotate(-45deg);
+  transition:transform .12s ease;
+}
+
+button.root-directory-tree-toggle.is-expanded::before{
+  transform:rotate(45deg) translate(-1px,-1px);
+}
+
+button.root-directory-tree-toggle:hover{
+  background:#eef2f6;
+  color:#667085;
+}
+
+.root-directory-tree-row > span.root-directory-tree-toggle{
+  visibility:hidden;
+}
+
+/* Cleaner outline icons with a consistent 15px footprint. */
+.root-directory-tree-icon{
+  width:15px;
+  height:15px;
+  min-width:15px;
+  color:#98a2b3;
+}
+
+.root-directory-tree-icon.is-folder{
+  color:#7c8798;
+}
+
+.root-directory-tree-icon.is-folder::before{
+  left:1px;
+  top:4px;
+  width:13px;
+  height:8px;
+  border:1.2px solid currentColor;
+  border-radius:2px;
+  background:#fff;
+}
+
+.root-directory-tree-icon.is-folder::after{
+  left:2px;
+  top:2px;
+  width:6px;
+  height:4px;
+  border:1.2px solid currentColor;
+  border-bottom:0;
+  border-radius:2px 2px 0 0;
+  background:#fff;
+}
+
+.root-directory-tree-icon.is-file::before{
+  left:3px;
+  top:1px;
+  width:8px;
+  height:12px;
+  border:1.2px solid currentColor;
+  border-radius:1.5px;
+  background:#fff;
+}
+
+/* Small folded corner for files. */
+.root-directory-tree-icon.is-file::after{
+  content:"";
+  position:absolute;
+  right:2px;
+  top:2px;
+  width:3px;
+  height:3px;
+  border-left:1px solid currentColor;
+  border-bottom:1px solid currentColor;
+  background:#fff;
+}
+
+.root-directory-tree-name{
+  flex:1 1 auto;
+  min-width:0;
+  color:#475467;
+  font-weight:400;
+}
+
+.root-directory-tree-name.is-folder{
+  color:#344054;
+  font-weight:500;
+}
+
+.root-directory-tree-loading,
+.root-directory-tree-empty{
+  min-height:52px;
+  justify-content:center;
+  padding:0 12px;
+  color:#98a2b3;
+  font-size:11px;
+  text-align:center;
+}
+</style>
+
+
+<style id="root-directory-icon-consistency-fix">
+/* Match the visual footprint of metadata icons used on the other tabs. */
+.root-directory-meta-icon{
+  width:16px;
+  height:16px;
+  flex:0 0 16px;
+  margin-right:7px;
+  color:#98a2b3;
+}
+
+.root-directory-meta-icon svg{
+  width:16px;
+  height:16px;
+  display:block;
+  overflow:visible;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.35;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+
+/* Both tree icon types use the exact same fixed 16x16 SVG footprint. */
+.root-directory-tree-icon,
+.root-directory-tree-icon.is-folder,
+.root-directory-tree-icon.is-file{
+  position:relative;
+  width:16px;
+  height:16px;
+  min-width:16px;
+  flex:0 0 16px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  color:#8c96a5;
+}
+
+.root-directory-tree-icon svg{
+  width:16px;
+  height:16px;
+  display:block;
+  overflow:visible;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.25;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+
+/* Disable the previous CSS-drawn icons completely. */
+.root-directory-tree-icon::before,
+.root-directory-tree-icon::after,
+.root-directory-tree-icon.is-folder::before,
+.root-directory-tree-icon.is-folder::after,
+.root-directory-tree-icon.is-file::before,
+.root-directory-tree-icon.is-file::after{
+  content:none !important;
+  display:none !important;
+}
+</style>
+
+
+<style id="timeline-file-browser-breadcrumb-refined-style">
+.timeline-file-browser-breadcrumb{
+  min-height:38px;
+  height:38px;
+  gap:2px;
+  padding:5px 10px;
+  overflow-x:auto;
+  overflow-y:hidden;
+  border-bottom:1px solid #e4e7ec;
+  background:#f8fafc;
+  scrollbar-width:none;
+  scroll-behavior:smooth;
+}
+
+.timeline-file-browser-breadcrumb::-webkit-scrollbar{
+  display:none;
+}
+
+.timeline-file-browser-crumb{
+  position:relative;
+  flex:0 0 auto;
+  max-width:180px;
+  height:28px;
+  display:inline-flex;
+  align-items:center;
+  min-width:0;
+  margin:0;
+  padding:0 7px;
+  overflow:hidden;
+  border:0;
+  border-radius:5px;
+  background:transparent;
+  color:#667085;
+  font-size:11px;
+  font-weight:400;
+  line-height:28px;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  transition:
+    background-color .08s ease,
+    color .08s ease;
+}
+
+.timeline-file-browser-crumb:not(.is-current):hover{
+  background:#eef2f6;
+  color:#344054;
+}
+
+.timeline-file-browser-crumb:not(.is-current):focus-visible{
+  outline:1px solid #98a2b3;
+  outline-offset:-1px;
+}
+
+.timeline-file-browser-crumb.is-root{
+  padding-left:25px;
+}
+
+.timeline-file-browser-crumb.is-root::before{
+  content:"";
+  position:absolute;
+  left:7px;
+  top:7px;
+  width:13px;
+  height:11px;
+  box-sizing:border-box;
+  border:1.2px solid currentColor;
+  border-radius:2px;
+  opacity:.85;
+}
+
+.timeline-file-browser-crumb.is-root::after{
+  content:"";
+  position:absolute;
+  left:8px;
+  top:5px;
+  width:6px;
+  height:4px;
+  box-sizing:border-box;
+  border:1.2px solid currentColor;
+  border-bottom:0;
+  border-radius:2px 2px 0 0;
+  opacity:.85;
+}
+
+.timeline-file-browser-crumb.is-current{
+  color:#344054;
+  font-weight:600;
+  cursor:default;
+}
+
+.timeline-file-browser-crumb-separator{
+  position:relative;
+  width:14px;
+  height:28px;
+  flex:0 0 14px;
+  color:#c2c8d0;
+  font-size:0;
+}
+
+.timeline-file-browser-crumb-separator::before{
+  content:"";
+  position:absolute;
+  left:4px;
+  top:10px;
+  width:5px;
+  height:5px;
+  border-right:1.2px solid currentColor;
+  border-bottom:1.2px solid currentColor;
+  transform:rotate(-45deg);
+}
+
+/* Let long paths remain compact without visually boxing every segment. */
+.timeline-file-browser-crumb + .timeline-file-browser-crumb-separator,
+.timeline-file-browser-crumb-separator + .timeline-file-browser-crumb{
+  margin-left:0;
+}
+</style>
+
+
+<style id="timeline-file-browser-root-icon-fix">
+/* Root breadcrumb is icon-only; the directory name is intentionally hidden. */
+.timeline-file-browser-crumb.is-root{
+  width:28px;
+  min-width:28px;
+  max-width:28px;
+  padding:0;
+  justify-content:center;
+}
+
+.timeline-file-browser-crumb.is-root::before,
+.timeline-file-browser-crumb.is-root::after{
+  content:none !important;
+  display:none !important;
+}
+
+.timeline-file-browser-root-icon{
+  width:16px;
+  height:16px;
+  display:block;
+  overflow:visible;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.3;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+</style>
+
+
+<style id="timeline-file-browser-root-name-restored-style">
+.timeline-file-browser-crumb.is-root{
+  width:auto;
+  min-width:0;
+  max-width:200px;
+  gap:6px;
+  padding:0 7px;
+  justify-content:flex-start;
+}
+
+.timeline-file-browser-root-icon{
+  width:16px;
+  height:16px;
+  min-width:16px;
+  flex:0 0 16px;
+}
+
+.timeline-file-browser-root-label{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+</style>
+
+
+<style id="timeline-delete-button-refined-style">
+/* Combine row identity and row action into one compact frozen cell. */
+.direct-table .grid-col-no{
+  width:68px;
+  min-width:68px;
+  max-width:68px;
+}
+
+.direct-table th.grid-col-time,
+.direct-table td.grid-col-time{
+  left:68px;
+}
+
+.direct-table th.grid-col-command,
+.direct-table td.grid-col-command{
+  left:176px;
+}
+
+.grid-row-number-cell{
+  width:100%;
+  height:54px;
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) 28px;
+  align-items:center;
+  padding:0 5px 0 7px;
+}
+
+.grid-row-number{
+  min-width:0;
+  color:#667085;
+  font-size:11.5px;
+  font-variant-numeric:tabular-nums;
+  line-height:1;
+  text-align:center;
+  user-select:none;
+}
+
+/* Always visible so the action is self-evident without hover discovery. */
+.timeline-row-delete-button{
+  width:26px;
+  height:26px;
+  min-width:26px;
+  margin:0;
+  padding:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border:0;
+  border-radius:5px;
+  background:transparent;
+  color:#98a2b3;
+  opacity:1 !important;
+  visibility:visible !important;
+  pointer-events:auto !important;
+  transition:
+    background-color .08s ease,
+    color .08s ease;
+}
+
+.timeline-row-delete-button svg{
+  width:14px;
+  height:14px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.65;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+
+.timeline-row-delete-button:hover{
+  background:#fef3f2;
+  color:#d92d20;
+}
+
+.timeline-row-delete-button:focus-visible{
+  outline:1px solid #f97066;
+  outline-offset:1px;
+  background:#fef3f2;
+  color:#d92d20;
+}
+
+/* Row selection keeps the structural cell coherent. */
+.direct-table tbody tr.grid-row-selected
+  > td.grid-col-no .grid-row-number{
+  color:#475467;
+}
+
+/* Timeline no longer uses a standalone actions column. */
+#scenarioHead .grid-col-actions,
+#scenarioBody .grid-col-actions{
+  display:none;
+}
+</style>
+
+
+<style id="timeline-delete-column-left-style">
+/* Dedicated Timeline-only delete column. */
+#scenarioHead .grid-col-delete,
+#scenarioBody .grid-col-delete{
+  width:38px;
+  min-width:38px;
+  max-width:38px;
+  padding:0;
+  position:sticky;
+  left:0;
+  z-index:7;
+  background:#fff;
+}
+
+#scenarioHead .grid-col-delete{
+  background:#f8fafc;
+}
+
+#scenarioBody .grid-col-delete{
+  z-index:5;
+}
+
+#scenarioBody tr.grid-row-selected > .grid-col-delete{
+  background:#eaf2ff !important;
+}
+
+/* Restore # as a pure row-number column. */
+.direct-table .grid-col-no{
+  width:46px;
+  min-width:46px;
+  max-width:46px;
+}
+
+.direct-table th.grid-col-no,
+.direct-table td.grid-col-no{
+  left:38px;
+}
+
+.direct-table th.grid-col-time,
+.direct-table td.grid-col-time{
+  left:84px;
+}
+
+.direct-table th.grid-col-command,
+.direct-table td.grid-col-command{
+  left:192px;
+}
+
+/* Compact, always-visible destructive action. */
+#scenarioBody .grid-col-delete .timeline-row-delete-button{
+  width:26px;
+  height:26px;
+  min-width:26px;
+  margin:auto;
+  padding:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border:0;
+  border-radius:5px;
+  background:transparent;
+  color:#a6aeba;
+  opacity:1 !important;
+  visibility:visible !important;
+  pointer-events:auto !important;
+  transition:
+    background-color .08s ease,
+    color .08s ease,
+    transform .08s ease;
+}
+
+#scenarioBody .grid-col-delete .timeline-row-delete-button svg{
+  width:14px;
+  height:14px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.6;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+
+#scenarioBody .grid-col-delete .timeline-row-delete-button:hover{
+  background:#fef3f2;
+  color:#d92d20;
+}
+
+#scenarioBody .grid-col-delete .timeline-row-delete-button:active{
+  transform:scale(.94);
+}
+
+#scenarioBody .grid-col-delete .timeline-row-delete-button:focus-visible{
+  outline:1px solid #f97066;
+  outline-offset:1px;
+  background:#fef3f2;
+  color:#d92d20;
+}
+
+/* Remove styling from the abandoned combined-cell approach. */
+.grid-row-number-cell{
+  display:none;
+}
+
+/* Ensure the old timeline action-column rules cannot interfere. */
+#scenarioHead .grid-col-actions,
+#scenarioBody .grid-col-actions{
+  display:none;
+}
+</style>
+
+
+<style id="repository-edit-lock-style">
+.repository-edit-toggle{
+  flex:0 0 auto;
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  height:28px;
+  padding:0 2px;
+  color:#667085;
+  font-size:11px;
+  font-weight:500;
+  line-height:1;
+  cursor:pointer;
+  user-select:none;
+}
+
+.repository-edit-toggle input{
+  width:14px;
+  height:14px;
+  margin:0;
+  accent-color:#667085;
+  cursor:pointer;
+}
+
+.repository-edit-toggle:has(input:disabled){
+  color:#b0b7c3;
+  cursor:default;
+}
+
+.repository-edit-toggle input:disabled{
+  cursor:default;
+}
+
+/* Locked repository cells remain readable, not visually disabled. */
+.repository-edit-table .repo-definition-input[readonly]{
+  color:#344054;
+  background:transparent;
+}
+
+/* File picker remains visible but clearly non-interactive while locked. */
+.repo-path-picker.is-disabled{
+  color:#c4c9d1;
+  cursor:default;
+  pointer-events:none;
+}
+
+.repo-path-cell:hover .repo-path-picker.is-disabled{
+  background:transparent;
+  color:#c4c9d1;
+}
+
+/* Delete stays recognizable but inactive while the repository is locked. */
+.repository-edit-table .repo-delete:disabled{
+  background:transparent;
+  color:#c4c9d1;
+  cursor:default;
+  opacity:.55;
+  pointer-events:none;
+}
+
+.repository-edit-table .repo-delete:disabled:hover{
+  background:transparent;
+  color:#c4c9d1;
+}
+</style>
+
+
+<style id="repository-root-directory-unified-style">
+/* Repository Path uses the same Root Directory browser as Timeline filePath. */
+button.repo-path-picker{
+  margin:0;
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  font:inherit;
+  color:#98a2b3;
+}
+
+button.repo-path-picker:hover{
+  background:#f5f7fa;
+  color:#475467;
+}
+
+button.repo-path-picker.is-disabled{
+  background:transparent;
+  color:#c4c9d1;
+  cursor:default;
+}
+
+/* Preview no longer has its own folder-selection controls. */
+.repository-preview-header{
+  justify-content:flex-start;
+}
+</style>
+
+
+<style id="app-header-refined-style">
+/* Compact application header: restrained hierarchy, no decorative clutter. */
+header{
+  height:44px;
+  min-height:44px;
+  box-sizing:border-box;
+  padding:0 14px;
+  display:flex;
+  align-items:center;
+  background:#f7f9fc;
+  border-bottom:1px solid #e3e7ec;
+}
+
+header h1{
+  margin:0;
+  color:#344054;
+  font-size:15px;
+  font-weight:600;
+  line-height:1;
+  letter-spacing:-.01em;
+  white-space:nowrap;
+}
+
+.app-version{
+  margin-left:auto;
+  padding-left:14px;
+  color:#a0a8b5;
+  font-size:9.5px;
+  font-weight:500;
+  line-height:1;
+  letter-spacing:.025em;
+  white-space:nowrap;
+  user-select:none;
+}
+</style>
+
+
+<style id="app-title-icon-style">
+.app-title-icon{
+  width:18px;
+  height:18px;
+  flex:0 0 18px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  margin-right:8px;
+  color:#667085;
+}
+
+.app-title-icon svg{
+  width:18px;
+  height:18px;
+  display:block;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.4;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+
+.app-title-icon circle{
+  fill:#667085;
+  stroke:none;
+}
+</style>
+
 </head>
 <body>
 <div class="app">
   <header>
+    <span class="app-title-icon" aria-hidden="true">
+      <svg viewBox="0 0 18 18" focusable="false" aria-hidden="true">
+        <circle cx="4" cy="4" r="1.35"></circle>
+        <circle cx="4" cy="9" r="1.35"></circle>
+        <circle cx="4" cy="14" r="1.35"></circle>
+        <path d="M7 4h7"></path>
+        <path d="M7 9h5"></path>
+        <path d="M7 14h7"></path>
+      </svg>
+    </span>
     <h1>Timeline Editor</h1>
     <span class="app-version">v1.0.0</span>
   </header>
@@ -2486,6 +3834,17 @@ header{
           </label>
           <button id="repositorySaveBtn">保存</button>
           <div class="spacer"></div>
+          <label class="repository-edit-toggle">
+            <input id="repositoryEditEnabled" type="checkbox">
+            <span>編集を許可</span>
+          </label>
+        </div>
+      </div>
+
+      <div id="rootDirectoryToolbar" class="editor-toolbar hidden">
+        <div class="root-directory-toolbar-inner">
+          <button id="timelineFileRootSelectBtn" type="button">選択</button>
+          <div class="spacer"></div>
         </div>
       </div>
 
@@ -2501,10 +3860,12 @@ header{
 
       <div id="scenarioContent" class="table-wrap editor-content">
         <div class="timeline-meta-wrap">
-          <div class="repository-meta">
-            <span class="file-meta-icon" aria-hidden="true"></span>
-            <span id="timelineFileName" class="repo-meta-file">未読込</span>
-            <span id="timelineRowCount" class="repo-meta-count">0 rows</span>
+          <div class="repository-meta timeline-meta-row">
+            <div class="timeline-document-meta">
+              <span class="file-meta-icon" aria-hidden="true"></span>
+              <span id="timelineFileName" class="repo-meta-file">未読込</span>
+              <span id="timelineRowCount" class="repo-meta-count">0 rows</span>
+            </div>
           </div>
         </div>
 
@@ -2526,17 +3887,6 @@ header{
           <aside id="repositoryPreviewPane" class="repository-preview-pane">
             <div class="repository-preview-header">
               <span class="repository-preview-title">Preview</span>
-              <span id="repositoryPreviewFolderName" class="repository-preview-folder-name hidden"></span>
-              <label class="repository-preview-folder-button">
-                フォルダ選択
-                <input
-                  id="repositoryPreviewFolderInput"
-                  type="file"
-                  webkitdirectory
-                  directory
-                  multiple
-                >
-              </label>
             </div>
             <div id="repositoryPreviewBody" class="repository-preview-body">
               <div class="repository-preview-empty">
@@ -2544,6 +3894,22 @@ header{
               </div>
             </div>
           </aside>
+        </div>
+      </div>
+
+      <div id="rootDirectoryContent" class="repository-editor editor-content hidden">
+        <div id="rootDirectoryMeta" class="repository-meta root-directory-meta">
+          <span class="root-directory-meta-icon" aria-hidden="true">
+            <svg viewBox="0 0 16 16" focusable="false" aria-hidden="true">
+              <path d="M1.25 4.25A1.25 1.25 0 0 1 2.5 3h3.2c.35 0 .68.14.92.39l1.05 1.08c.14.14.33.22.53.22h5.3A1.25 1.25 0 0 1 14.75 5.94v6.31a1.25 1.25 0 0 1-1.25 1.25h-11a1.25 1.25 0 0 1-1.25-1.25v-8Z"/>
+            </svg>
+          </span>
+          <span id="timelineFileRootName" class="repo-meta-file">未選択</span>
+        </div>
+
+        <div id="rootDirectoryTreeWrap" class="root-directory-tree-wrap hidden">
+          <div class="root-directory-tree-header">Name</div>
+          <div id="rootDirectoryTreeHost" class="root-directory-tree-host"></div>
         </div>
       </div>
 
@@ -2571,9 +3937,8 @@ const state = {
   activeEditor: "scenario",
   repositorySelections: new Map(),
   repositoryPreviewFiles: new WeakMap(),
-  repositoryPreviewFolders: new Map(),
-  repositoryPreviewFileUrls: new WeakMap(),
-  timelineFileName: ""
+  timelineFileName: "",
+  timelineFileRoot: null
 };
 
 const $ = (id) => document.getElementById(id);
@@ -2712,7 +4077,9 @@ function loadDefinitions(text, fileName = "") {
         [],
         index,
         null,
-        ""
+        "",
+        undefined,
+        false
       );
     }
 
@@ -2743,12 +4110,14 @@ function loadDefinitions(text, fileName = "") {
       state.repositories.set(source, {
         ids: [],
         fileName: "",
-        loaded: false
+        loaded: false,
+        editingEnabled: false
       });
     }
   }
 
   if (state.activeEditor !== "scenario" &&
+      state.activeEditor !== "rootDirectory" &&
       state.activeEditor !== "commandDefinitions" &&
       !state.repositories.has(state.activeEditor)) {
     state.activeEditor = "scenario";
@@ -2770,7 +4139,9 @@ function appendDefinitionArgument(
   memberPath,
   index,
   inheritedSource,
-  inheritedDescription
+  inheritedDescription,
+  inheritedDefaultValue,
+  inheritedNullable
 ) {
   const type = String(definition?.type ?? "").trim().toLowerCase();
   const name = String(rootName ?? "").trim();
@@ -2779,6 +4150,26 @@ function appendDefinitionArgument(
     inheritedDescription ??
     ""
   ).trim();
+
+  const hasOwnDefaultValue =
+    Object.prototype.hasOwnProperty.call(
+      definition ?? {},
+      "defaultValue"
+    );
+
+  const defaultValue = hasOwnDefaultValue
+    ? definition.defaultValue
+    : inheritedDefaultValue;
+
+  const hasOwnNullable =
+    Object.prototype.hasOwnProperty.call(
+      definition ?? {},
+      "nullable"
+    );
+
+  const nullable = hasOwnNullable
+    ? definition.nullable === true
+    : Boolean(inheritedNullable);
 
   if (!name) {
     throw new Error("Command Definitionにnameのないparameter/propertyがあります。");
@@ -2794,6 +4185,13 @@ function appendDefinitionArgument(
     let nextIndex = index;
 
     for (const property of properties) {
+      const childDefaultValue =
+        getObjectPropertyDefaultValue(
+          defaultValue,
+          properties,
+          property
+        );
+
       nextIndex = appendDefinitionArgument(
         result,
         property,
@@ -2801,7 +4199,9 @@ function appendDefinitionArgument(
         [...memberPath, property?.name ?? ""],
         nextIndex,
         source,
-        description
+        description,
+        childDefaultValue,
+        nullable
       );
     }
 
@@ -2818,9 +4218,18 @@ function appendDefinitionArgument(
       memberPath: memberText,
       jsonPath,
       type: "Command",
-      required: true,
+      definitionType: "execution",
+      nullable,
+      required: !nullable,
       source: "",
-      defaultValue: "",
+      filePath: false,
+      defaultValue:
+        normalizeDefinitionDefaultValue(
+          "Command",
+          defaultValue,
+          false,
+          nullable
+        ),
       min: "",
       max: "",
       options: [],
@@ -2841,12 +4250,18 @@ function appendDefinitionArgument(
     memberPath: memberText,
     jsonPath,
     type: mappedType,
-    required:
-      mappedType !== "String" ||
-      Boolean(definition.source || inheritedSource),
+    definitionType: type,
+    nullable,
+    required: !nullable,
     source: definition.source || inheritedSource || "",
+    filePath: Boolean(definition.filePath),
     defaultValue:
-      mappedType === "Bool" ? "false" : "",
+      normalizeDefinitionDefaultValue(
+        mappedType,
+        defaultValue,
+        Boolean(definition.multiSelect),
+        nullable
+      ),
     min: definition.min ?? "",
     max: definition.max ?? "",
     options: Array.isArray(definition.options)
@@ -2857,6 +4272,65 @@ function appendDefinitionArgument(
   });
 
   return index + 1;
+}
+
+function getObjectPropertyDefaultValue(
+  objectDefaultValue,
+  properties,
+  property
+) {
+  if (objectDefaultValue === undefined)
+    return undefined;
+
+  if (isPlainDefinitionObject(objectDefaultValue)) {
+    const propertyName =
+      String(property?.name ?? "");
+
+    return Object.prototype.hasOwnProperty.call(
+      objectDefaultValue,
+      propertyName
+    )
+      ? objectDefaultValue[propertyName]
+      : undefined;
+  }
+
+  return properties.length === 1
+    ? objectDefaultValue
+    : undefined;
+}
+
+function isPlainDefinitionObject(value) {
+  return value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value);
+}
+
+function normalizeDefinitionDefaultValue(
+  type,
+  value,
+  multiSelect,
+  nullable
+) {
+  if (value === undefined || value === null) {
+    return type === "Bool" && !nullable
+      ? "false"
+      : "";
+  }
+
+  if (type === "Bool") {
+    const normalized = toBoolText(value);
+    return normalized || "false";
+  }
+
+  if (type === "Enum" &&
+      multiSelect &&
+      Array.isArray(value)) {
+    return value
+      .map(String)
+      .join("|");
+  }
+
+  return String(value);
 }
 
 function definitionTypeToEditorType(type) {
@@ -2998,7 +4472,8 @@ function loadRepository(sourceName, text, fileName) {
     loaded: true,
     headers,
     dataRows: rows.slice(1).map(r => [...r]),
-    idIndex
+    idIndex,
+    editingEnabled: false
   });
 
   renderAll();
@@ -3132,11 +4607,13 @@ function validateArgumentValue(arg, raw) {
   const errors = [];
   const name = getArgDisplayName(arg);
 
-  if (arg.required && raw === "") {
+  if (raw === "") {
+    if (arg.nullable)
+      return errors;
+
     errors.push(`${name}: 必須です。`);
     return errors;
   }
-  if (raw === "") return errors;
 
   if (arg.type === "Float") {
     const n = Number(raw);
@@ -3196,6 +4673,19 @@ function validateArgumentValue(arg, raw) {
     errors.push(`${name}: 未定義のCommand '${raw}' です。`);
   }
 
+  if (arg.source && !arg.filePath) {
+    const repo = state.repositories.get(arg.source);
+
+    if (!repo || !repo.loaded) {
+      errors.push(
+        `${name}: Repository '${arg.source}' が読み込まれていません。`
+      );
+    } else if (!repo.ids.includes(raw)) {
+      errors.push(
+        `${name}: '${raw}' は ${arg.source} に存在しません。`
+      );
+    }
+  }
 
   return errors;
 }
@@ -3303,6 +4793,7 @@ function renderAll() {
   updateEditorVisibility();
   updateScenarioToolbarState();
   updateTimelineMeta();
+  updateTimelineFileRootUi();
 }
 
 function updateTimelineMeta() {
@@ -3361,6 +4852,12 @@ function renderScenarioHead(maxArgs) {
 
   appendScenarioHeaderCell(
     tr,
+    "",
+    "grid-col-delete"
+  );
+
+  appendScenarioHeaderCell(
+    tr,
     "#",
     "grid-col-no"
   );
@@ -3393,12 +4890,6 @@ function renderScenarioHead(maxArgs) {
     tr,
     "Status",
     "grid-col-status"
-  );
-
-  appendScenarioHeaderCell(
-    tr,
-    "",
-    "grid-col-actions"
   );
 
   head.appendChild(tr);
@@ -3530,12 +5021,24 @@ function renderTable() {
       renderTableSelectionOnly();
     });
 
+    // Delete
+    const deleteTd = document.createElement("td");
+    deleteTd.className = "grid-col-delete";
+
+    deleteTd.appendChild(
+      createTimelineRowDeleteButton(rowIndex)
+    );
+
+    tr.appendChild(deleteTd);
+
     // #
     const noTd = document.createElement("td");
     noTd.className = "grid-col-no";
+
     const noCell = document.createElement("div");
     noCell.className = "grid-simple-cell";
     noCell.textContent = String(rowIndex + 1);
+
     noTd.appendChild(noCell);
     tr.appendChild(noTd);
 
@@ -3583,27 +5086,21 @@ function renderTable() {
     );
     tr.appendChild(statusTd);
 
-    // Delete
-    const actionsTd = document.createElement("td");
-    actionsTd.className = "grid-col-actions";
-    actionsTd.appendChild(
-      createTimelineRowDeleteButton(rowIndex)
-    );
-    tr.appendChild(actionsTd);
-
     body.appendChild(tr);
   });
 }
 
 function createTimelineRowDeleteButton(rowIndex) {
-  const cell = document.createElement("div");
-  cell.className = "row-delete-cell";
-
   const button = document.createElement("button");
   button.type = "button";
-  button.className = "row-delete-icon-button";
+  button.className =
+    "row-delete-icon-button timeline-row-delete-button";
+
   button.title = "この行を削除";
-  button.setAttribute("aria-label", "この行を削除");
+  button.setAttribute(
+    "aria-label",
+    "この行を削除"
+  );
 
   button.innerHTML = `
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -3623,8 +5120,7 @@ function createTimelineRowDeleteButton(rowIndex) {
     }
   );
 
-  cell.appendChild(button);
-  return cell;
+  return button;
 }
 
 function renderTableSelectionOnly() {
@@ -3727,6 +5223,8 @@ function createSearchablePicker(
     settings.searchPlaceholder || "検索";
   const countLabel =
     settings.countLabel || "items";
+  const disabled =
+    Boolean(settings.disabled);
 
   let value = String(current ?? "");
   let filtered = [];
@@ -3777,6 +5275,7 @@ function createSearchablePicker(
       empty ? "-- select --" : value;
     valueText.classList.toggle("is-empty", empty);
     trigger.title = value;
+    trigger.disabled = disabled;
   }
 
   function candidates() {
@@ -3875,7 +5374,7 @@ function createSearchablePicker(
   }
 
   function openPicker() {
-    if (!popup.hidden) return;
+    if (disabled || !popup.hidden) return;
     popup.hidden = false;
     wrap.classList.add("is-open");
     wrap.closest("td")?.classList.add("picker-cell-open");
@@ -3957,15 +5456,16 @@ function createFilePathGridControl(current) {
   input.type = "text";
   input.className = "grid-file-path-input";
   input.value = value;
-  input.placeholder = "ファイルパス";
 
-  const picker = document.createElement("label");
+  const picker = document.createElement("button");
+  picker.type = "button";
   picker.className = "grid-file-path-picker";
-  picker.title = "ファイルを選択";
+  picker.title = "Root Directoryからファイルを選択";
+  picker.setAttribute(
+    "aria-label",
+    "Root Directoryからファイルを選択"
+  );
   picker.textContent = "⋯";
-
-  const fileInput = document.createElement("input");
-  fileInput.type = "file";
 
   Object.defineProperty(wrap, "value", {
     configurable: true,
@@ -3974,22 +5474,877 @@ function createFilePathGridControl(current) {
 
   input.addEventListener("input", () => {
     value = input.value;
-    wrap.dispatchEvent(new Event("change", { bubbles: false }));
+    wrap.dispatchEvent(
+      new Event("change", { bubbles: false })
+    );
   });
 
-  fileInput.addEventListener("change", () => {
-    const file = fileInput.files?.[0];
-    if (!file) return;
+  picker.addEventListener("click", async event => {
+    event.preventDefault();
+    event.stopPropagation();
 
-    value = file.webkitRelativePath || file.name;
-    input.value = value;
-    wrap.dispatchEvent(new Event("change", { bubbles: false }));
-    fileInput.value = "";
+    try {
+      const selectedPath =
+        await chooseRootRelativeFilePath();
+
+      if (selectedPath === null)
+        return;
+
+      value = selectedPath;
+      input.value = value;
+
+      wrap.dispatchEvent(
+        new Event("change", { bubbles: false })
+      );
+    } catch (error) {
+      alert(error.message || String(error));
+    }
   });
 
-  picker.appendChild(fileInput);
   wrap.append(input, picker);
   return wrap;
+}
+
+
+async function chooseRootRelativeFilePath() {
+  if (!state.timelineFileRoot) {
+    state.activeEditor = "rootDirectory";
+    renderAll();
+
+    requestAnimationFrame(() => {
+      $("timelineFileRootSelectBtn")?.focus();
+    });
+
+    return null;
+  }
+
+  return openTimelineFileBrowser();
+}
+
+async function selectTimelineFileRoot() {
+  ensureLocalFileEditorContext();
+
+  if (!("showDirectoryPicker" in window)) {
+    throw new Error(
+      "このブラウザではフォルダ選択機能を利用できません。ChromeまたはEdgeで、このHTMLをfile:///から開いてください。"
+    );
+  }
+
+  try {
+    const handle =
+      await window.showDirectoryPicker({
+        id: "timeline-file-root",
+        mode: "read"
+      });
+
+    state.timelineFileRoot = {
+      mode: "handle",
+      name: handle.name,
+      handle
+    };
+
+    rootDirectoryTreeExpanded.clear();
+    updateTimelineFileRootUi();
+    await renderRootDirectoryTree();
+    return true;
+  } catch (error) {
+    if (error?.name === "AbortError")
+      return false;
+
+    throw error;
+  }
+}
+
+function ensureLocalFileEditorContext() {
+  if (window.location.protocol === "file:")
+    return;
+
+  throw new Error(
+    "このTimeline EditorはローカルHTML（file:///）として実行してください。"
+  );
+}
+
+function updateTimelineFileRootUi() {
+  const name =
+    $("timelineFileRootName");
+
+  if (!name)
+    return;
+
+  const root =
+    state.timelineFileRoot;
+
+  name.textContent =
+    root?.name || "未選択";
+
+  name.title =
+    root?.name || "";
+
+  const button =
+    $("timelineFileRootSelectBtn");
+
+  if (button) {
+    button.textContent =
+      root ? "変更" : "選択";
+  }
+}
+
+
+const rootDirectoryTreeExpanded = new Set();
+let rootDirectoryTreeRenderToken = 0;
+
+async function renderRootDirectoryTree() {
+  const wrap =
+    $("rootDirectoryTreeWrap");
+
+  const host =
+    $("rootDirectoryTreeHost");
+
+  if (!wrap || !host)
+    return;
+
+  const root =
+    state.timelineFileRoot;
+
+  if (!root) {
+    wrap.classList.add("hidden");
+    host.innerHTML = "";
+    return;
+  }
+
+  wrap.classList.remove("hidden");
+
+  const token =
+    ++rootDirectoryTreeRenderToken;
+
+  host.innerHTML =
+    `<div class="root-directory-tree-loading">読み込み中...</div>`;
+
+  try {
+    const fragment =
+      await buildRootDirectoryTreeFragment(
+        root,
+        [],
+        0,
+        token
+      );
+
+    if (token !== rootDirectoryTreeRenderToken)
+      return;
+
+    host.innerHTML = "";
+
+    if (!fragment.childNodes.length) {
+      const empty =
+        document.createElement("div");
+
+      empty.className =
+        "root-directory-tree-empty";
+
+      empty.textContent =
+        "ファイルがありません";
+
+      host.appendChild(empty);
+      return;
+    }
+
+    host.appendChild(fragment);
+  } catch (error) {
+    if (token !== rootDirectoryTreeRenderToken)
+      return;
+
+    host.innerHTML = "";
+
+    const message =
+      document.createElement("div");
+
+    message.className =
+      "root-directory-tree-empty";
+
+    message.textContent =
+      error.message || String(error);
+
+    host.appendChild(message);
+  }
+}
+
+async function buildRootDirectoryTreeFragment(
+  root,
+  segments,
+  depth,
+  token
+) {
+  const fragment =
+    document.createDocumentFragment();
+
+  const entries =
+    await listTimelineHandleDirectory(
+      root,
+      segments
+    );
+
+  if (token !== rootDirectoryTreeRenderToken)
+    return fragment;
+
+  for (const entry of entries) {
+    const pathSegments = [
+      ...segments,
+      entry.name
+    ];
+
+    const path =
+      pathSegments.join("/");
+
+    const expanded =
+      entry.kind === "directory" &&
+      rootDirectoryTreeExpanded.has(path);
+
+    fragment.appendChild(
+      createRootDirectoryTreeRow(
+        entry,
+        path,
+        depth,
+        expanded
+      )
+    );
+
+    if (expanded) {
+      const children =
+        await buildRootDirectoryTreeFragment(
+          root,
+          pathSegments,
+          depth + 1,
+          token
+        );
+
+      if (token !== rootDirectoryTreeRenderToken)
+        return fragment;
+
+      fragment.appendChild(children);
+    }
+  }
+
+  return fragment;
+}
+
+function createRootDirectoryTreeRow(
+  entry,
+  path,
+  depth,
+  expanded
+) {
+  const row =
+    document.createElement("div");
+
+  row.className =
+    "root-directory-tree-row";
+
+  row.style.setProperty(
+    "--tree-depth",
+    String(depth)
+  );
+
+  const toggle =
+    document.createElement(
+      entry.kind === "directory"
+        ? "button"
+        : "span"
+    );
+
+  toggle.className =
+    "root-directory-tree-toggle";
+
+  if (entry.kind === "directory") {
+    toggle.type = "button";
+    toggle.classList.toggle(
+      "is-expanded",
+      expanded
+    );
+
+    toggle.setAttribute(
+      "aria-expanded",
+      String(expanded)
+    );
+
+    toggle.setAttribute(
+      "aria-label",
+      expanded
+        ? `${entry.name}を閉じる`
+        : `${entry.name}を開く`
+    );
+
+    toggle.addEventListener(
+      "click",
+      async event => {
+        event.stopPropagation();
+        toggleRootDirectoryTreePath(path);
+        await renderRootDirectoryTree();
+      }
+    );
+  }
+
+  const icon =
+    createRootDirectoryTreeIcon(
+      entry.kind
+    );
+
+  const name =
+    document.createElement("span");
+
+  name.className =
+    "root-directory-tree-name";
+
+  name.textContent =
+    entry.name;
+
+  name.title =
+    path;
+
+  name.classList.toggle(
+    "is-folder",
+    entry.kind === "directory"
+  );
+
+  row.append(
+    toggle,
+    icon,
+    name
+  );
+
+  if (entry.kind === "directory") {
+    row.classList.add("is-directory");
+
+    row.addEventListener(
+      "dblclick",
+      async () => {
+        toggleRootDirectoryTreePath(path);
+        await renderRootDirectoryTree();
+      }
+    );
+  }
+
+  return row;
+}
+
+
+function createRootDirectoryTreeIcon(kind) {
+  const icon =
+    document.createElement("span");
+
+  icon.className =
+    kind === "directory"
+      ? "root-directory-tree-icon is-folder"
+      : "root-directory-tree-icon is-file";
+
+  icon.innerHTML =
+    kind === "directory"
+      ? `
+        <svg viewBox="0 0 16 16" focusable="false" aria-hidden="true">
+          <path d="M1.25 4.25A1.25 1.25 0 0 1 2.5 3h3.2c.35 0 .68.14.92.39l1.05 1.08c.14.14.33.22.53.22h5.3A1.25 1.25 0 0 1 14.75 5.94v6.31a1.25 1.25 0 0 1-1.25 1.25h-11a1.25 1.25 0 0 1-1.25-1.25v-8Z"/>
+        </svg>
+      `
+      : `
+        <svg viewBox="0 0 16 16" focusable="false" aria-hidden="true">
+          <path d="M3 1.5h6.1L13 5.4v8.1a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1Z"/>
+          <path d="M9 1.75V5.5h3.75"/>
+        </svg>
+      `;
+
+  return icon;
+}
+
+function toggleRootDirectoryTreePath(path) {
+  if (rootDirectoryTreeExpanded.has(path)) {
+    rootDirectoryTreeExpanded.delete(path);
+    return;
+  }
+
+  rootDirectoryTreeExpanded.add(path);
+}
+
+let timelineFileBrowserResolve = null;
+let timelineFileBrowserSegments = [];
+let timelineFileBrowserRenderToken = 0;
+
+function ensureTimelineFileBrowserDialog() {
+  let dialog =
+    $("timelineFileBrowserDialog");
+
+  if (dialog)
+    return dialog;
+
+  dialog =
+    document.createElement("dialog");
+
+  dialog.id =
+    "timelineFileBrowserDialog";
+
+  dialog.className =
+    "timeline-file-browser-dialog";
+
+  dialog.innerHTML = `
+    <div class="timeline-file-browser-header">
+      <div class="timeline-file-browser-heading">
+        <div class="timeline-file-browser-title">
+          ファイルを選択
+        </div>
+      </div>
+      <button
+        id="timelineFileBrowserCloseBtn"
+        type="button"
+        class="timeline-file-browser-close"
+        aria-label="閉じる"
+        title="閉じる"
+      >×</button>
+    </div>
+
+    <div
+      id="timelineFileBrowserBreadcrumb"
+      class="timeline-file-browser-breadcrumb"
+    ></div>
+
+    <div
+      id="timelineFileBrowserEntries"
+      class="timeline-file-browser-entries"
+    ></div>
+
+    <div class="timeline-file-browser-footer">
+      <button
+        id="timelineFileBrowserCancelBtn"
+        type="button"
+      >キャンセル</button>
+    </div>
+  `;
+
+  document.body.appendChild(dialog);
+
+  $("timelineFileBrowserCloseBtn")
+    .addEventListener(
+      "click",
+      () => closeTimelineFileBrowser(null)
+    );
+
+  $("timelineFileBrowserCancelBtn")
+    .addEventListener(
+      "click",
+      () => closeTimelineFileBrowser(null)
+    );
+
+  dialog.addEventListener("cancel", event => {
+    event.preventDefault();
+    closeTimelineFileBrowser(null);
+  });
+
+  return dialog;
+}
+
+function openTimelineFileBrowser() {
+  const root =
+    state.timelineFileRoot;
+
+  if (!root)
+    return Promise.resolve(null);
+
+  const dialog =
+    ensureTimelineFileBrowserDialog();
+
+  timelineFileBrowserSegments = [];
+
+  return new Promise(resolve => {
+    timelineFileBrowserResolve = resolve;
+
+    renderTimelineFileBrowser();
+
+    if (!dialog.open) {
+      dialog.showModal();
+    }
+  });
+}
+
+function closeTimelineFileBrowser(value) {
+  const dialog =
+    $("timelineFileBrowserDialog");
+
+  if (dialog?.open)
+    dialog.close();
+
+  const resolve =
+    timelineFileBrowserResolve;
+
+  timelineFileBrowserResolve = null;
+
+  if (resolve)
+    resolve(value);
+}
+
+async function renderTimelineFileBrowser() {
+  const root =
+    state.timelineFileRoot;
+
+  const breadcrumb =
+    $("timelineFileBrowserBreadcrumb");
+
+  const entriesHost =
+    $("timelineFileBrowserEntries");
+
+  if (!root || !breadcrumb || !entriesHost)
+    return;
+
+  const renderToken =
+    ++timelineFileBrowserRenderToken;
+
+  renderTimelineFileBrowserBreadcrumb(
+    breadcrumb
+  );
+
+  entriesHost.innerHTML =
+    `<div class="timeline-file-browser-loading">読み込み中...</div>`;
+
+  let entries;
+
+  try {
+    entries =
+      await listTimelineHandleDirectory(
+        root,
+        timelineFileBrowserSegments
+      );
+  } catch (error) {
+    if (renderToken !==
+        timelineFileBrowserRenderToken) {
+      return;
+    }
+
+    entriesHost.innerHTML = "";
+
+    const message =
+      document.createElement("div");
+
+    message.className =
+      "timeline-file-browser-empty";
+
+    message.textContent =
+      error.message || String(error);
+
+    entriesHost.appendChild(message);
+    return;
+  }
+
+  if (renderToken !==
+      timelineFileBrowserRenderToken) {
+    return;
+  }
+
+  entriesHost.innerHTML = "";
+
+  if (timelineFileBrowserSegments.length) {
+    entriesHost.appendChild(
+      createTimelineFileBrowserEntry(
+        "..",
+        "directory",
+        () => {
+          timelineFileBrowserSegments.pop();
+          renderTimelineFileBrowser();
+        },
+        true
+      )
+    );
+  }
+
+  if (!entries.length) {
+    const empty =
+      document.createElement("div");
+
+    empty.className =
+      "timeline-file-browser-empty";
+
+    empty.textContent =
+      "このフォルダにファイルがありません。";
+
+    entriesHost.appendChild(empty);
+    return;
+  }
+
+  for (const entry of entries) {
+    const action =
+      entry.kind === "directory"
+        ? () => {
+            timelineFileBrowserSegments.push(
+              entry.name
+            );
+            renderTimelineFileBrowser();
+          }
+        : () => {
+            const path = [
+              ...timelineFileBrowserSegments,
+              entry.name
+            ].join("/");
+
+            closeTimelineFileBrowser(path);
+          };
+
+    entriesHost.appendChild(
+      createTimelineFileBrowserEntry(
+        entry.name,
+        entry.kind,
+        action,
+        false
+      )
+    );
+  }
+}
+
+function renderTimelineFileBrowserBreadcrumb(host) {
+  host.innerHTML = "";
+
+  const hasSegments =
+    timelineFileBrowserSegments.length > 0;
+
+  const rootButton =
+    createTimelineFileBrowserRootCrumb(
+      !hasSegments,
+      () => {
+        timelineFileBrowserSegments = [];
+        renderTimelineFileBrowser();
+      }
+    );
+
+  host.appendChild(rootButton);
+
+  timelineFileBrowserSegments
+    .forEach((segment, index) => {
+      const separator =
+        document.createElement("span");
+
+      separator.className =
+        "timeline-file-browser-crumb-separator";
+
+      separator.setAttribute(
+        "aria-hidden",
+        "true"
+      );
+
+      const isCurrent =
+        index ===
+        timelineFileBrowserSegments.length - 1;
+
+      const button =
+        createTimelineFileBrowserCrumb(
+          segment,
+          isCurrent,
+          () => {
+            timelineFileBrowserSegments =
+              timelineFileBrowserSegments.slice(
+                0,
+                index + 1
+              );
+
+            renderTimelineFileBrowser();
+          }
+        );
+
+      host.append(
+        separator,
+        button
+      );
+    });
+
+  requestAnimationFrame(() => {
+    host.scrollLeft =
+      host.scrollWidth;
+  });
+}
+
+
+function createTimelineFileBrowserRootCrumb(
+  isCurrent,
+  onClick
+) {
+  const button =
+    document.createElement("button");
+
+  button.type = "button";
+  button.className =
+    "timeline-file-browser-crumb is-root";
+
+  const rootName =
+    state.timelineFileRoot?.name ||
+    "Root Directory";
+
+  button.title = rootName;
+  button.setAttribute(
+    "aria-label",
+    rootName
+  );
+
+  button.innerHTML = `
+    <svg
+      class="timeline-file-browser-root-icon"
+      viewBox="0 0 16 16"
+      focusable="false"
+      aria-hidden="true"
+    >
+      <path d="M1.25 4.5A1.25 1.25 0 0 1 2.5 3.25h3.15c.37 0 .72.16.96.44l.86 1c.24.28.59.44.96.44h5.07a1.25 1.25 0 0 1 1.25 1.25v5.87a1.25 1.25 0 0 1-1.25 1.25h-11a1.25 1.25 0 0 1-1.25-1.25V4.5Z"/>
+    </svg>
+  `;
+
+  const label =
+    document.createElement("span");
+
+  label.className =
+    "timeline-file-browser-root-label";
+
+  label.textContent =
+    rootName;
+
+  button.appendChild(label);
+
+  if (isCurrent) {
+    button.classList.add("is-current");
+    button.setAttribute(
+      "aria-current",
+      "page"
+    );
+    button.tabIndex = -1;
+    return button;
+  }
+
+  button.addEventListener(
+    "click",
+    onClick
+  );
+
+  return button;
+}
+
+function createTimelineFileBrowserCrumb(
+  label,
+  isCurrent,
+  onClick
+) {
+  const button =
+    document.createElement("button");
+
+  button.type = "button";
+  button.className =
+    "timeline-file-browser-crumb";
+
+  button.textContent = label;
+  button.title = label;
+
+  if (isCurrent) {
+    button.classList.add("is-current");
+    button.setAttribute(
+      "aria-current",
+      "page"
+    );
+    button.tabIndex = -1;
+    return button;
+  }
+
+  button.addEventListener(
+    "click",
+    onClick
+  );
+
+  return button;
+}
+
+function createTimelineFileBrowserEntry(
+  name,
+  kind,
+  onClick,
+  isParent
+) {
+  const button =
+    document.createElement("button");
+
+  button.type = "button";
+  button.className =
+    "timeline-file-browser-entry";
+
+  const icon =
+    document.createElement("span");
+
+  icon.className =
+    "timeline-file-browser-entry-icon";
+
+  icon.textContent =
+    kind === "directory"
+      ? "›"
+      : "·";
+
+  const label =
+    document.createElement("span");
+
+  label.className =
+    "timeline-file-browser-entry-name";
+
+  label.textContent = name;
+
+  if (isParent) {
+    button.classList.add(
+      "is-parent"
+    );
+  }
+
+  button.append(icon, label);
+  button.addEventListener(
+    "click",
+    onClick
+  );
+
+  return button;
+}
+
+async function listTimelineHandleDirectory(
+  root,
+  segments
+) {
+  let directory =
+    root.handle;
+
+  for (const segment of segments) {
+    directory =
+      await directory.getDirectoryHandle(
+        segment
+      );
+  }
+
+  const entries = [];
+
+  for await (const [name, handle]
+      of directory.entries()) {
+    entries.push({
+      name,
+      kind:
+        handle.kind === "directory"
+          ? "directory"
+          : "file"
+    });
+  }
+
+  return sortTimelineFileBrowserEntries(
+    entries
+  );
+}
+
+function sortTimelineFileBrowserEntries(entries) {
+  return entries.sort((a, b) => {
+    if (a.kind !== b.kind) {
+      return a.kind === "directory"
+        ? -1
+        : 1;
+    }
+
+    return a.name.localeCompare(
+      b.name,
+      undefined,
+      {
+        numeric: true,
+        sensitivity: "base"
+      }
+    );
+  });
 }
 
 function createMultiSelectGridControl(arg, current) {
@@ -4065,7 +6420,10 @@ function createMultiSelectGridControl(arg, current) {
   return details;
 }
 
-function createBoolGridControl(current) {
+function createBoolGridControl(
+  current,
+  nullable = false
+) {
   const wrap = document.createElement("div");
   wrap.className = "grid-checkbox-control";
 
@@ -4073,7 +6431,7 @@ function createBoolGridControl(current) {
   checkbox.type = "checkbox";
 
   let value = toBoolText(current);
-  if (value === "")
+  if (value === "" && !nullable)
     value = "false";
 
   checkbox.checked = value === "true";
@@ -4331,6 +6689,7 @@ function createArgumentGridCell(row, rowIndex, arg) {
   let current = String(row.args[arg.index - 1] ?? "");
 
   if (arg.type === "Bool" &&
+      !arg.nullable &&
       toBoolText(current) === "") {
     current = "false";
     row.args[arg.index - 1] = current;
@@ -4347,10 +6706,24 @@ function createArgumentGridCell(row, rowIndex, arg) {
         countLabel: "commands"
       }
     );
-  } else if (arg.source) {
+  } else if (arg.filePath) {
     control = createFilePathGridControl(current);
+  } else if (arg.source) {
+    const repo = state.repositories.get(arg.source);
+    control = createSearchablePicker(
+      current,
+      repo?.loaded ? repo.ids : [],
+      {
+        searchPlaceholder: "IDを検索",
+        countLabel: "IDs",
+        disabled: !repo?.loaded
+      }
+    );
   } else if (arg.type === "Bool") {
-    control = createBoolGridControl(current);
+    control = createBoolGridControl(
+      current,
+      arg.nullable
+    );
   } else if (hasSliderRange(arg)) {
     control = createRangeGridControl(arg, current);
   } else if (arg.type === "Enum" && arg.options.length && arg.multiSelect) {
@@ -4458,15 +6831,55 @@ function refreshRowStatus(tr, row) {
 }
 
 function getRepositoryReferenceRows(sourceName, id) {
-  return [];
+  const referencedRows = new Set();
+
+  state.rows.forEach((row, rowIndex) => {
+    const def = state.definitions.get(row.command);
+    if (!def) return;
+
+    for (const arg of getEffectiveArgDefinitions(row)) {
+      if (arg.source !== sourceName || arg.filePath) continue;
+
+      const value = String(row.args[arg.index - 1] ?? "").trim();
+      if (value === id) {
+        referencedRows.add(rowIndex);
+      }
+    }
+  });
+
+  return [...referencedRows];
 }
 
 function clearRepositoryReferences(sourceName, id) {
-  // Timeline source arguments store file paths, not Repository IDs.
+  state.rows.forEach(row => {
+    const def = state.definitions.get(row.command);
+    if (!def) return;
+
+    for (const arg of getEffectiveArgDefinitions(row)) {
+      if (arg.source !== sourceName || arg.filePath) continue;
+
+      const value = String(row.args[arg.index - 1] ?? "").trim();
+      if (value === id) {
+        row.args[arg.index - 1] = "";
+      }
+    }
+  });
 }
 
 function replaceRepositoryReferences(sourceName, oldId, newId) {
-  // Timeline source arguments store file paths, not Repository IDs.
+  state.rows.forEach(row => {
+    const def = state.definitions.get(row.command);
+    if (!def) return;
+
+    for (const arg of getEffectiveArgDefinitions(row)) {
+      if (arg.source !== sourceName || arg.filePath) continue;
+
+      const value = String(row.args[arg.index - 1] ?? "").trim();
+      if (value === oldId) {
+        row.args[arg.index - 1] = newId;
+      }
+    }
+  });
 }
 
 function validateRepositoryId(repo, id, ignoreId = null) {
@@ -4514,7 +6927,10 @@ function getRepositoryPath(repo, id) {
 
 function addRepositoryId(sourceName) {
   const repo = state.repositories.get(sourceName);
-  if (!repo?.loaded) return;
+  if (!repo?.loaded ||
+      repo.editingEnabled !== true) {
+    return;
+  }
 
   const newRow = Array(repo.headers.length).fill("");
   repo.dataRows.push(newRow);
@@ -4523,7 +6939,10 @@ function addRepositoryId(sourceName) {
 }
 function renameRepositoryId(sourceName, oldId) {
   const repo = state.repositories.get(sourceName);
-  if (!repo?.loaded) return;
+  if (!repo?.loaded ||
+      repo.editingEnabled !== true) {
+    return;
+  }
 
   const newId = prompt(
     `"${oldId}" の新しいIDを入力してください。`,
@@ -4775,20 +7194,31 @@ function renderEditorTabs() {
   });
 
   addTab(
+    "rootDirectory",
+    "Root Directory",
+    "reference-tab root-directory-tab"
+  );
+
+  addTab(
     "commandDefinitions",
     "Command Definitions",
-    "reference-tab"
+    "reference-tab reference-tab-following"
   );
 }
 function updateEditorVisibility() {
   const scenarioMode =
     state.activeEditor === "scenario";
 
+  const rootDirectoryMode =
+    state.activeEditor === "rootDirectory";
+
   const definitionMode =
     state.activeEditor === "commandDefinitions";
 
   const repositoryMode =
-    !scenarioMode && !definitionMode;
+    !scenarioMode &&
+    !rootDirectoryMode &&
+    !definitionMode;
 
   $("scenarioToolbar").classList.toggle(
     "hidden",
@@ -4798,6 +7228,11 @@ function updateEditorVisibility() {
   $("repositoryToolbar").classList.toggle(
     "hidden",
     !repositoryMode
+  );
+
+  $("rootDirectoryToolbar").classList.toggle(
+    "hidden",
+    !rootDirectoryMode
   );
 
   $("commandDefinitionToolbar").classList.toggle(
@@ -4813,6 +7248,11 @@ function updateEditorVisibility() {
   $("repositoryContent").classList.toggle(
     "hidden",
     !repositoryMode
+  );
+
+  $("rootDirectoryContent").classList.toggle(
+    "hidden",
+    !rootDirectoryMode
   );
 
   $("commandDefinitionContent").classList.toggle(
@@ -4833,23 +7273,41 @@ function updateRepositoryToolbar() {
   const reloadButton = $("repositoryReloadBtn");
   const saveButton = $("repositorySaveBtn");
   const addButton = $("repositoryAddIdBtn");
+  const editToggle = $("repositoryEditEnabled");
 
-  if (!reloadButton || !saveButton || !addButton)
+  if (!reloadButton ||
+      !saveButton ||
+      !addButton ||
+      !editToggle) {
     return;
+  }
 
   if (state.activeEditor === "scenario" ||
+      state.activeEditor === "rootDirectory" ||
       state.activeEditor === "commandDefinitions") {
     return;
   }
 
-  const repo = state.repositories.get(state.activeEditor);
-  const loaded = Boolean(repo?.loaded);
+  const repo =
+    state.repositories.get(state.activeEditor);
+
+  const loaded =
+    Boolean(repo?.loaded);
+
+  const editingEnabled =
+    loaded && repo?.editingEnabled === true;
 
   reloadButton.textContent =
     loaded ? "再読み込み" : "読み込み";
 
-  saveButton.disabled = !loaded;
-  addButton.disabled = !loaded;
+  editToggle.disabled = !loaded;
+  editToggle.checked = editingEnabled;
+
+  saveButton.disabled =
+    !loaded || !editingEnabled;
+
+  addButton.disabled =
+    !loaded || !editingEnabled;
 }
 
 function updateCommandDefinitionToolbar() {
@@ -4879,6 +7337,9 @@ function commitRepositoryId(
   input,
   cell
 ) {
+  if (repo?.editingEnabled !== true)
+    return;
+
   const newId = input.value.trim();
   const error = validateRepositoryId(repo, newId, oldId || null);
 
@@ -4922,7 +7383,8 @@ function commitRepositoryId(
 }
 
 function configureRepositoryInlineEdit(
-  input
+  input,
+  repo
 ) {
   input.readOnly = true;
 
@@ -4934,7 +7396,10 @@ function configureRepositoryInlineEdit(
 
   input.addEventListener("dblclick", event => {
     event.stopPropagation();
-    beginRepositoryInlineEdit(input);
+    beginRepositoryInlineEdit(
+      input,
+      repo
+    );
   });
 
   input.addEventListener("blur", () => {
@@ -4952,9 +7417,14 @@ function configureRepositoryInlineEdit(
   });
 }
 
-function beginRepositoryInlineEdit(input) {
-  if (input.disabled)
+function beginRepositoryInlineEdit(
+  input,
+  repo
+) {
+  if (input.disabled ||
+      repo?.editingEnabled !== true) {
     return;
+  }
 
   input.readOnly = false;
   input.classList.add("repository-editing");
@@ -4983,7 +7453,7 @@ function createRepositoryIdCell(
 
   input.value = oldId;
   input.title = oldId;
-  configureRepositoryInlineEdit(input);
+  configureRepositoryInlineEdit(input, repo);
 
   if (!oldId) {
     input.classList.add("invalid");
@@ -4991,6 +7461,9 @@ function createRepositoryIdCell(
   }
 
   input.addEventListener("change", () => {
+    if (repo.editingEnabled !== true)
+      return;
+
     const newId = input.value.trim();
     const error =
       validateRepositoryId(
@@ -5082,9 +7555,12 @@ function createRepositoryPathCell(
 
   input.value = String(dataRow[pathIndex] ?? "");
   input.title = input.value;
-  configureRepositoryInlineEdit(input);
+  configureRepositoryInlineEdit(input, repo);
 
   input.addEventListener("input", () => {
+    if (repo.editingEnabled !== true)
+      return;
+
     dataRow[pathIndex] = input.value;
     input.title = input.value;
 
@@ -5099,212 +7575,148 @@ function createRepositoryPathCell(
     }
   });
 
-  const picker = document.createElement("label");
+  const picker =
+    document.createElement("button");
+
+  picker.type = "button";
   picker.className = "repo-path-picker";
-  picker.title = "ファイルを選択";
+  picker.classList.toggle(
+    "is-disabled",
+    repo.editingEnabled !== true
+  );
+
+  picker.title =
+    repo.editingEnabled === true
+      ? "Root Directoryからファイルを選択"
+      : "編集はロックされています";
+
   picker.textContent = "⋯";
 
-  picker.addEventListener("click", event => {
-    event.stopPropagation();
-    selectRepositoryRow(
-      sourceName,
-      repo,
-      rowIndex
-    );
-  });
+  picker.setAttribute(
+    "aria-label",
+    "Root Directoryからファイルを選択"
+  );
 
-  const fileInput = document.createElement("input");
-  fileInput.type = "file";
+  picker.setAttribute(
+    "aria-disabled",
+    String(repo.editingEnabled !== true)
+  );
 
-  fileInput.addEventListener("change", () => {
-    const file = fileInput.files?.[0];
-    if (!file) return;
+  picker.addEventListener(
+    "click",
+    async event => {
+      event.preventDefault();
+      event.stopPropagation();
 
-    const selectedPath =
-      file.webkitRelativePath || file.name;
+      if (repo.editingEnabled !== true)
+        return;
 
-    input.value = selectedPath;
-    input.title = selectedPath;
-    dataRow[pathIndex] = selectedPath;
+      try {
+        const selectedPath =
+          await chooseRootRelativeFilePath();
 
-    setRepositoryPreviewFile(
-      dataRow,
-      file
-    );
+        if (selectedPath === null)
+          return;
 
-    selectRepositoryRow(
-      sourceName,
-      repo,
-      rowIndex
-    );
+        input.value = selectedPath;
+        input.title = selectedPath;
+        dataRow[pathIndex] = selectedPath;
 
-    fileInput.value = "";
-  });
+        selectRepositoryRow(
+          sourceName,
+          repo,
+          rowIndex
+        );
+      } catch (error) {
+        alert(error.message || String(error));
+      }
+    }
+  );
 
-  picker.appendChild(fileInput);
   wrap.append(input, picker);
   return wrap;
 }
 
 
-function buildRepositoryPreviewFolder(files) {
-  const fileList = [...files];
-  const byRelativePath = new Map();
-  const byName = new Map();
+function normalizeRootRelativePath(path) {
+  const raw =
+    String(path ?? "")
+      .trim()
+      .replaceAll("\\", "/");
 
-  let rootName = "";
-
-  for (const file of fileList) {
-    const relativePath =
-      normalizePreviewPath(
-        file.webkitRelativePath || file.name
-      );
-
-    if (!rootName && file.webkitRelativePath) {
-      rootName =
-        file.webkitRelativePath.split("/")[0] || "";
-    }
-
-    byRelativePath.set(
-      relativePath,
-      file
-    );
-
-    const name =
-      file.name.toLowerCase();
-
-    const sameName =
-      byName.get(name) ?? [];
-
-    sameName.push(file);
-    byName.set(name, sameName);
+  if (!raw ||
+      /^[a-zA-Z]:\//.test(raw) ||
+      raw.startsWith("//") ||
+      raw.startsWith("/")) {
+    return "";
   }
 
-  return {
-    rootName,
-    files: fileList,
-    byRelativePath,
-    byName
-  };
-}
+  const parts =
+    raw
+      .replace(/^\.\/+/, "")
+      .replace(/\/+/g, "/")
+      .split("/")
+      .filter(Boolean);
 
-function normalizePreviewPath(path) {
-  return String(path ?? "")
-    .trim()
-    .replaceAll("\\", "/")
-    .replace(/^file:\/+/i, "")
-    .replace(/^\.\/+/, "")
-    .replace(/\/+/g, "/")
-    .toLowerCase();
-}
-
-function findRepositoryPreviewFile(
-  sourceName,
-  path
-) {
-  const folder =
-    state.repositoryPreviewFolders.get(sourceName);
-
-  if (!folder) return null;
-
-  const target =
-    normalizePreviewPath(path);
-
-  if (!target) return null;
-
-  const exact =
-    folder.byRelativePath.get(target);
-
-  if (exact) return exact;
-
-  const withoutDrive =
-    target.replace(/^[a-z]:\//, "");
-
-  for (const [relativePath, file]
-      of folder.byRelativePath.entries()) {
-    const relativeWithoutRoot =
-      stripPreviewRoot(
-        relativePath,
-        folder.rootName
-      );
-
-    if (withoutDrive === relativePath ||
-        withoutDrive === relativeWithoutRoot ||
-        withoutDrive.endsWith("/" + relativePath) ||
-        withoutDrive.endsWith("/" + relativeWithoutRoot)) {
-      return file;
-    }
+  if (!parts.length ||
+      parts.some(
+        part =>
+          part === "." ||
+          part === ".."
+      )) {
+    return "";
   }
 
-  const fileName =
-    target.split("/").pop();
-
-  const sameName =
-    folder.byName.get(fileName) ?? [];
-
-  return sameName.length === 1
-    ? sameName[0]
-    : null;
+  return parts.join("/");
 }
 
-function stripPreviewRoot(
-  relativePath,
-  rootName
-) {
+async function getRootDirectoryFile(path) {
   const root =
-    normalizePreviewPath(rootName);
+    state.timelineFileRoot;
 
-  if (!root) return relativePath;
+  const relativePath =
+    normalizeRootRelativePath(path);
 
-  const prefix = root + "/";
+  if (!root?.handle || !relativePath)
+    return null;
 
-  return relativePath.startsWith(prefix)
-    ? relativePath.slice(prefix.length)
-    : relativePath;
+  const parts =
+    relativePath.split("/");
+
+  let directory =
+    root.handle;
+
+  try {
+    for (const segment of parts.slice(0, -1)) {
+      directory =
+        await directory.getDirectoryHandle(
+          segment
+        );
+    }
+
+    const fileHandle =
+      await directory.getFileHandle(
+        parts[parts.length - 1]
+      );
+
+    return await fileHandle.getFile();
+  } catch (error) {
+    if (error?.name === "NotFoundError")
+      return null;
+
+    throw error;
+  }
 }
 
-function getRepositoryPreviewFileUrl(file) {
-  let url =
-    state.repositoryPreviewFileUrls.get(file);
+function clearRepositoryPreviewFile(dataRow) {
+  const current =
+    state.repositoryPreviewFiles.get(dataRow);
 
-  if (url) return url;
+  if (current?.url) {
+    URL.revokeObjectURL(current.url);
+  }
 
-  url = URL.createObjectURL(file);
-
-  state.repositoryPreviewFileUrls.set(
-    file,
-    url
-  );
-
-  return url;
-}
-
-function updateRepositoryPreviewFolderStatus(
-  sourceName
-) {
-  const label =
-    $("repositoryPreviewFolderName");
-
-  if (!label) return;
-
-  const folder =
-    state.repositoryPreviewFolders.get(sourceName);
-
-  label.classList.toggle(
-    "hidden",
-    !folder
-  );
-
-  label.textContent =
-    folder
-      ? folder.rootName ||
-        `${folder.files.length} files`
-      : "";
-
-  label.title =
-    folder
-      ? `${folder.files.length} files`
-      : "";
+  state.repositoryPreviewFiles.delete(dataRow);
 }
 
 function setRepositoryPreviewFile(
@@ -5382,7 +7794,9 @@ function updateRepositorySelectedRow(
   });
 }
 
-function renderRepositoryPreview(
+let repositoryPreviewRenderToken = 0;
+
+async function renderRepositoryPreview(
   sourceName,
   repo,
   rowIndex
@@ -5390,7 +7804,11 @@ function renderRepositoryPreview(
   const body =
     $("repositoryPreviewBody");
 
-  if (!body) return;
+  if (!body)
+    return;
+
+  const token =
+    ++repositoryPreviewRenderToken;
 
   body.innerHTML = "";
 
@@ -5422,31 +7840,11 @@ function renderRepositoryPreview(
     path
   );
 
-  const selectedFile =
-    state.repositoryPreviewFiles.get(dataRow);
-
-  if (selectedFile) {
-    appendRepositoryPreviewMedia(
+  if (!path) {
+    clearRepositoryPreviewFile(dataRow);
+    appendRepositoryPreviewEmpty(
       body,
-      selectedFile.url,
-      selectedFile.file.type,
-      selectedFile.file.name
-    );
-    return;
-  }
-
-  const folderFile =
-    findRepositoryPreviewFile(
-      sourceName,
-      path
-    );
-
-  if (folderFile) {
-    appendRepositoryPreviewMedia(
-      body,
-      getRepositoryPreviewFileUrl(folderFile),
-      folderFile.type,
-      folderFile.name
+      "Pathが設定されていません。"
     );
     return;
   }
@@ -5455,32 +7853,78 @@ function renderRepositoryPreview(
     detectPreviewMediaType(path);
 
   if (!mediaType) {
+    clearRepositoryPreviewFile(dataRow);
     appendRepositoryPreviewEmpty(
       body,
-      path
-        ? "このファイル形式はプレビュー対象外です。"
-        : "Pathが設定されていません。"
+      "このファイル形式はプレビュー対象外です。"
     );
     return;
   }
 
-  const sourceUrl =
-    resolvePreviewSource(path);
-
-  if (!sourceUrl) {
+  if (!state.timelineFileRoot) {
+    clearRepositoryPreviewFile(dataRow);
     appendRepositoryPreviewEmpty(
       body,
-      "上部の「フォルダ選択」でプレビュー元フォルダを指定すると、このPathから自動でファイルを検索します。"
+      "Root Directoryが選択されていません。"
     );
     return;
   }
 
-  appendRepositoryPreviewMedia(
-    body,
-    sourceUrl,
-    mediaType,
-    path
-  );
+  const loading =
+    document.createElement("div");
+
+  loading.className =
+    "repository-preview-empty";
+
+  loading.textContent =
+    "読み込み中...";
+
+  body.appendChild(loading);
+
+  try {
+    const file =
+      await getRootDirectoryFile(path);
+
+    if (token !== repositoryPreviewRenderToken)
+      return;
+
+    loading.remove();
+
+    if (!file) {
+      clearRepositoryPreviewFile(dataRow);
+      appendRepositoryPreviewEmpty(
+        body,
+        "Root Directory内にファイルが見つかりません。"
+      );
+      return;
+    }
+
+    setRepositoryPreviewFile(
+      dataRow,
+      file
+    );
+
+    const preview =
+      state.repositoryPreviewFiles.get(dataRow);
+
+    appendRepositoryPreviewMedia(
+      body,
+      preview.url,
+      file.type || mediaType,
+      file.name
+    );
+  } catch (error) {
+    if (token !== repositoryPreviewRenderToken)
+      return;
+
+    loading.remove();
+    clearRepositoryPreviewFile(dataRow);
+
+    appendRepositoryPreviewEmpty(
+      body,
+      error.message || "ファイルを読み込めませんでした。"
+    );
+  }
 }
 
 function appendRepositoryPreviewMeta(
@@ -5639,7 +8083,7 @@ function showPreviewLoadError(media) {
     "repository-preview-message";
 
   message.textContent =
-    "ファイルを読み込めませんでした。Preview上部でフォルダを指定するか、Path右端の ⋯ から個別に選択してください。";
+    "Root Directoryからファイルを読み込めませんでした。Pathを確認してください。";
 
   media.appendChild(message);
 }
@@ -5683,36 +8127,15 @@ function isAudioMediaType(
     detectPreviewMediaType(name) === "audio";
 }
 
-function resolvePreviewSource(path) {
-  const value =
-    String(path ?? "").trim();
-
-  if (!value) return "";
-
-  if (/^(blob:|data:|https?:)/i.test(value)) {
-    return value;
-  }
-
-  if (/^[a-zA-Z]:[\\/]/.test(value) ||
-      /^\\\\/.test(value)) {
-    return "";
-  }
-
-  try {
-    return new URL(
-      value.replaceAll("\\", "/"),
-      window.location.href
-    ).href;
-  } catch {
-    return "";
-  }
-}
 
 function deleteRepositoryRow(
   sourceName,
   repo,
   rowIndex
 ) {
+  if (repo?.editingEnabled !== true)
+    return;
+
   const dataRow = repo.dataRows[rowIndex];
   if (!dataRow) return;
 
@@ -5733,14 +8156,7 @@ function deleteRepositoryRow(
     clearRepositoryReferences(sourceName, id);
   }
 
-  const preview =
-    state.repositoryPreviewFiles.get(dataRow);
-
-  if (preview?.url) {
-    URL.revokeObjectURL(preview.url);
-  }
-
-  state.repositoryPreviewFiles.delete(dataRow);
+  clearRepositoryPreviewFile(dataRow);
 
   repo.dataRows.splice(rowIndex, 1);
   syncRepositoryIds(repo);
@@ -5776,14 +8192,13 @@ function renderActiveRepository() {
   }
 
   if (state.activeEditor === "scenario" ||
+      state.activeEditor === "rootDirectory" ||
       state.activeEditor === "commandDefinitions") {
     return;
   }
 
   const source = state.activeEditor;
   const repo = state.repositories.get(source);
-
-  updateRepositoryPreviewFolderStatus(source);
 
   if (!repo) {
     host.innerHTML =
@@ -5924,7 +8339,12 @@ function renderActiveRepository() {
     const del = document.createElement("button");
     del.type = "button";
     del.className = "row-delete-icon-button repo-delete";
-    del.title = "この行を削除";
+    del.disabled =
+      repo.editingEnabled !== true;
+    del.title =
+      repo.editingEnabled === true
+        ? "この行を削除"
+        : "編集はロックされています";
     del.setAttribute("aria-label", "この行を削除");
 
     del.innerHTML = `
@@ -6040,6 +8460,7 @@ function renderCommandDefinitions() {
     <thead>
       <tr>
         <th>Parameter</th>
+        <th>Type</th>
         <th>Description</th>
       </tr>
     </thead>
@@ -6087,7 +8508,7 @@ function appendCommandDefinitionHeader(
   tr.className = "definition-command-row";
 
   const td = document.createElement("td");
-  td.colSpan = 2;
+  td.colSpan = 3;
 
   const header = document.createElement("div");
   header.className = "definition-command-header";
@@ -6117,10 +8538,14 @@ function appendEmptyCommandDefinitionRow(tbody) {
     "definition-empty-parameter";
   parameter.textContent = "No inputs";
 
+  const type = document.createElement("td");
+  type.className = "definition-parameter-type is-empty";
+  type.textContent = "—";
+
   const description = document.createElement("td");
   description.textContent = "—";
 
-  tr.append(parameter, description);
+  tr.append(parameter, type, description);
   tbody.appendChild(tr);
 }
 
@@ -6148,6 +8573,17 @@ function appendCommandDefinitionInputRow(
 
   parameterTd.appendChild(parameterName);
 
+  const typeTd =
+    document.createElement("td");
+
+  typeTd.className =
+    "definition-parameter-type";
+
+  typeTd.textContent =
+    input.definitionType ||
+    String(input.type ?? "").toLowerCase() ||
+    "—";
+
   const descriptionTd =
     document.createElement("td");
 
@@ -6164,6 +8600,7 @@ function appendCommandDefinitionInputRow(
 
   tr.append(
     parameterTd,
+    typeTd,
     descriptionTd
   );
 
@@ -6568,7 +9005,18 @@ function buildExecution(commandName, values, cursor, depth) {
 
     if (arg.type === "Command") {
       if (!raw) {
-        throw new Error(`${getArgDisplayName(arg)} のCommandを選択してください。`);
+        if (arg.nullable) {
+          setJsonPathValue(
+            argumentsObject,
+            arg.jsonPath,
+            null
+          );
+          continue;
+        }
+
+        throw new Error(
+          `${getArgDisplayName(arg)} のCommandを選択してください。`
+        );
       }
 
       setJsonPathValue(
@@ -6611,6 +9059,10 @@ function setJsonPathValue(root, path, value) {
 }
 
 function editorTextToJsonValue(arg, raw) {
+  if (arg.nullable && raw === "") {
+    return null;
+  }
+
   if (arg.source) {
     return raw;
   }
@@ -6677,7 +9129,11 @@ $("scenarioFile").addEventListener("change", async (e) => {
 
 $("repositoryReloadFile").addEventListener("change", async (e) => {
   const file = e.target.files?.[0];
-  if (!file || state.activeEditor === "scenario") return;
+  if (!file ||
+      !state.repositories.has(state.activeEditor)) {
+    e.target.value = "";
+    return;
+  }
 
   try {
     loadRepository(
@@ -6693,8 +9149,11 @@ $("repositoryReloadFile").addEventListener("change", async (e) => {
 });
 
 $("repositorySaveBtn").addEventListener("click", () => {
-  if (state.activeEditor === "scenario" ||
-      state.activeEditor === "commandDefinitions") {
+  const repo =
+    state.repositories.get(state.activeEditor);
+
+  if (!repo?.loaded ||
+      repo.editingEnabled !== true) {
     return;
   }
 
@@ -6702,9 +9161,34 @@ $("repositorySaveBtn").addEventListener("click", () => {
 });
 
 $("repositoryAddIdBtn").addEventListener("click", () => {
-  if (state.activeEditor === "scenario") return;
+  const repo =
+    state.repositories.get(state.activeEditor);
+
+  if (!repo?.loaded ||
+      repo.editingEnabled !== true) {
+    return;
+  }
+
   addRepositoryId(state.activeEditor);
 });
+
+$("repositoryEditEnabled").addEventListener(
+  "change",
+  event => {
+    const repo =
+      state.repositories.get(state.activeEditor);
+
+    if (!repo?.loaded) {
+      event.target.checked = false;
+      return;
+    }
+
+    repo.editingEnabled =
+      event.target.checked === true;
+
+    renderAll();
+  }
+);
 
 $("addBtn").addEventListener("click", addRow);
 $("duplicateBtn").addEventListener("click", duplicateRow);
@@ -6713,47 +9197,17 @@ $("downBtn").addEventListener("click", () => moveRow(1));
 $("validateBtn").addEventListener("click", () => validateAll(true));
 $("exportBtn").addEventListener("click", exportScenario);
 
-$("repositoryPreviewFolderInput").addEventListener(
-  "change",
-  event => {
-    const files =
-      event.target.files;
-
-    if (!files?.length ||
-        state.activeEditor === "scenario" ||
-        state.activeEditor === "commandDefinitions") {
-      event.target.value = "";
-      return;
+$("timelineFileRootSelectBtn").addEventListener(
+  "click",
+  async () => {
+    try {
+      await selectTimelineFileRoot();
+    } catch (error) {
+      alert(error.message || String(error));
     }
-
-    const source =
-      state.activeEditor;
-
-    state.repositoryPreviewFolders.set(
-      source,
-      buildRepositoryPreviewFolder(files)
-    );
-
-    updateRepositoryPreviewFolderStatus(source);
-
-    const repo =
-      state.repositories.get(source);
-
-    const selectedRow =
-      state.repositorySelections.get(source);
-
-    if (repo &&
-        Number.isInteger(selectedRow)) {
-      renderRepositoryPreview(
-        source,
-        repo,
-        selectedRow
-      );
-    }
-
-    event.target.value = "";
   }
 );
+
 
 renderAll();
 </script>
