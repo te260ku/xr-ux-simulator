@@ -12,6 +12,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9373d24c2dd56bb4f81959ef15a11101, type: 3}
   m_Name: RepositoryIdGenerationConfig
   m_EditorClassIdentifier: Assembly-CSharp-Editor::RepositoryIdGenerationConfig
-  repositoryFilePath: 
-  idTypeScript: {fileID: 0}
+  repositoryFilePath: C:/Users/tetsuro/xr-ux-simulator/Assets/TimelineSystem_ParameterRange/SampleData/sound-repository.example.csv
+  idTypeScript: {fileID: 11500000, guid: a95bbda2612c9194f80ade9af98fcb13, type: 3}
   targetClassScript: {fileID: 0}
