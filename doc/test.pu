@@ -1,0 +1,8 @@
+@startuml
+' AとBを必ず横並びにさせたい場合（線は出ない）
+A -[hidden]right-> B
+
+' その上で通常の関係性を書く
+A --> C
+B --> C
+@endum
