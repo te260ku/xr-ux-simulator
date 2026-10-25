@@ -1,0 +1,90 @@
+
+@startuml
+title Unityアプリ 全体設計（論理コンポーネント図）
+left to right direction
+hide stereotype
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam linetype ortho
+skinparam nodesep 25
+skinparam ranksep 35
+skinparam ArrowFontSize 11
+skinparam ComponentFontSize 13
+skinparam PackageFontSize 13
+
+package "外部入力" {
+  component "外部C#ライブラリ\n（検知情報・Staff App等）" as EXT_IN
+}
+
+package "Unityアプリ" {
+  package "起動・構成" {
+    component "Composition Root\n（VContainer / AppConfig）" as ROOT
+  }
+
+  package "入力" {
+    component "Updater\n（データ取得・記録再生）" as UPD
+    component "Input Adapter\n（共通イベントの接続）" as INPUT_ADAPTER
+  }
+
+  package "アプリケーション" {
+    component "Coordinator\n（機能の処理統括）" as COORD
+    component "通常動作の判定\n（条件・ルール評価）" as RULES
+    component "タイムライン機能\n（Loader / Player /\nCommandExecutor）" as TIMELINE
+  }
+
+  package "出力" {
+    component "Actuation Controller\n（表示・音・照明を集約）" as CTRL
+    component "Output Adapter\n（その他の外部出力）" as OUT_ADAPTER
+    component "Presenter / View\n（Unity UI）" as UI
+  }
+
+  package "リソース" {
+    component "Repository / Loader\n（画像・音声など）" as REPO
+  }
+}
+
+package "外部ファイル" {
+  database "Dataフォルダ\n（Timeline / Rules / CSV / メディア）" as DATA
+  component "appconfig.json\n（StreamingAssets）" as CONFIG
+}
+
+package "外部出力先" {
+  component "表示・音声・照明機器" as DEVICES
+  component "外部システム" as EXT_OUT
+}
+
+EXT_IN --> UPD : 入力データ・イベント
+UPD --> COORD : 機能専属の入力
+UPD --> INPUT_ADAPTER : 共通イベント
+UPD --> RULES : 通常動作の入力
+INPUT_ADAPTER --> TIMELINE : タイムライン操作
+INPUT_ADAPTER --> COORD : 共通機能の起動
+
+RULES --> CTRL : 条件に応じた制御
+COORD --> CTRL : アクチュエーション要求
+COORD --> UI : 表示更新
+COORD --> OUT_ADAPTER : 外部送信
+TIMELINE --> CTRL : 時刻に応じた実行
+
+CTRL --> UI : UI表示
+CTRL --> DEVICES : 光・音・映像出力
+CTRL --> REPO : リソース取得
+OUT_ADAPTER --> EXT_OUT : データ送信
+
+DATA --> TIMELINE : Timeline JSON
+DATA --> RULES : ルールJSON
+DATA --> REPO : CSV・メディア
+DATA --> UPD : 記録座標JSON（UI用）
+CONFIG --> ROOT : 起動時設定
+ROOT ..> COORD : DI構成（代表）
+
+legend bottom
+  ・個別のUpdater、Controller、Repository、PresenterおよびDI登録線は集約・省略
+  ・記録座標JSONはUI表示専用。検知座標の外部送信はC#ライブラリ入力時のみ
+  ・通常動作とタイムラインはExecutionデータ形式を共有（実行処理の共通化までは図示しない）
+  ・MRアプリおよび一時的な動画座標記録ツールは対象外
+endlegend
+@enduml
