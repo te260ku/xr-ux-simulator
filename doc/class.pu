@@ -1,0 +1,62 @@
+
+@startuml
+title UI入出力のクラス図（入力・出力Portあり）
+
+left to right direction
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam defaultFontName "Meiryo"
+skinparam nodesep 35
+skinparam ranksep 40
+
+package "Input Adapter" {
+    class OperationInputAdapter {
+        - _subscription : IDisposable
+        + Start() : void
+        + Dispose() : void
+    }
+}
+
+package "Application" {
+    interface IOperationStarter {
+        + StartOperation() : void
+    }
+
+    class OperationCoordinator {
+        - _statusReporter : IOperationStatusReporter
+        - _isRunning : bool
+        + StartOperation() : void
+    }
+
+    interface IOperationStatusReporter {
+        + ReportRunningState(isRunning : bool) : void
+    }
+}
+
+package "Output Adapter" {
+    class OperationPresenter {
+        + ReportRunningState(isRunning : bool) : void
+    }
+}
+
+package "UI" {
+    class OperationView <<MonoBehaviour>> {
+        + StartClicked : Observable<Unit>
+        + ShowRunning(isRunning : bool) : void
+    }
+}
+
+' 入力側
+OperationInputAdapter --> OperationView : R3で購読
+OperationInputAdapter --> IOperationStarter : 操作要求
+OperationCoordinator ..|> IOperationStarter
+
+' 出力側
+OperationCoordinator --> IOperationStatusReporter : 状態報告
+OperationPresenter ..|> IOperationStatusReporter
+OperationPresenter --> OperationView : 表示更新
+
+@enduml
